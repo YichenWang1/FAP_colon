@@ -84,7 +84,7 @@ for(i in seq_along(legend_labels)) {
 popViewport()
 ```
 
-![](driver_plots_files/figure-html/Visualise APC mutations-1.png)<!-- -->
+![](driver_plots_files/figure-html/Visualise_APC_mutations-1.png)<!-- -->
 
 
 
@@ -124,5 +124,5 @@ coOncoplot(m1 = acf_maf, m2 = polyp_maf, genes = unique(c(acf_maf@gene.summary$H
     colors = all_cols, bgCol = "#EEEEEE", removeNonMutated = FALSE, geneNamefont = 0.6)
 ```
 
-![](driver_plots_files/figure-html/merge oncoplots-1.png)<!-- -->
+![](driver_plots_files/figure-html/merge_oncoplots-1.png)<!-- -->
 

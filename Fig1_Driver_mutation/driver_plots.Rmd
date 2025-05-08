@@ -22,7 +22,7 @@ library(ggpubr)
 cols = c("#8DD3C7", "#CFECBB", "#F4F3B9", "#BD98A2","#F5847A", "#8AB1C9","#CECBD0", "#D3B387", "#8DD3C7","#EABE63","#BFD767", "#FCCDE5","#8A8A8A" )
 ```
 
-```{r Visualise APC mutations}
+```{r Visualise_APC_mutations}
 # Visualise somatic APC mutations (data from ../data/somatic_driver_mutations.csv)
 SNP <- c(1396,1414,177,1306,1429,1450,1539,    
          231,304,659,1309,157,213,232,499,554,876,1114,1408,1521,  
@@ -122,7 +122,7 @@ oncoplot(maf = acf_maf,drawColBar=F, colors = all_cols,top = 100, bgCol = "#EEEE
 
 ```
 
-```{r merge oncoplots}
+```{r merge_oncoplots}
 # Merge oncoplot for polyps and ACF
 coOncoplot(m1 = acf_maf, m2 = polyp_maf, genes = unique(c(acf_maf@gene.summary$Hugo_Symbol,polyp_maf@gene.summary$Hugo_Symbol)), m1Name = 'ACF outside of polyps', m2Name = 'Adenomatous polyps', colors = all_cols,bgCol = "#EEEEEE",removeNonMutated = FALSE, geneNamefont = 0.6)
 ```

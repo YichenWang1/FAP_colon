@@ -43,7 +43,7 @@ full_dataset$germlinehit= as.factor(full_dataset$germlinehit)
 full_dataset$germlinehit = relevel(full_dataset$germlinehit , ref = "WT")
 ```
 
-```{r Disease effect SBS}
+```{r Disease_effect_SBS}
 
 dot_cols = c("#DF5B3F", "#F5B46F", "#70A3C4", "black")
 names(dot_cols) = c('Large polyp', 'Diminutive polyp', 'ACF', 'Age effect' )
@@ -129,7 +129,7 @@ p_sbs_disease = ggplot(df_sbs_disease[df_sbs_disease$group!="Age effect",], aes(
 p_sbs_disease
 ```
 
-```{r Disease effect ID}
+```{r Disease_effect_ID}
 dot_cols = c("#DF5B3F", "#F5B46F", "#70A3C4", "black")
 names(dot_cols) = c('Large polyp', 'Diminutive polyp', 'ACF', 'Age effect' )
 
@@ -213,7 +213,7 @@ p_id_disease = ggplot(df_id_disease[df_id_disease$group!="Age effect",], aes(x=r
 p_id_disease
 ```
 
-```{r, merge dot plot}
+```{r, merge_dot_plot}
 dot_plot = ggarrange(p_sbs_disease, p_id_disease,
           ncol = 2, nrow=1, common.legend = TRUE, legend = "right",  align = "v") 
 # pdf(paste0("../../figure/Fig3/disease_effect.pdf"),width = 7, height = 3)

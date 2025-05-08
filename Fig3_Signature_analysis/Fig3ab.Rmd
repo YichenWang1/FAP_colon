@@ -20,7 +20,7 @@ library(tidyverse)
 library(ggtext)
 ```
 
-```{r FAP SBS Mutational signature + burden}
+```{r FAP_SBS_mutational_signature_burden}
 database = read.csv('../data/fap_database_withexposure.csv',header=T)
 ctrl_database = read.csv('../data/ctrl_database_withexposure.csv',header=T)
 full_dataset = rbind(database,ctrl_database)
@@ -96,7 +96,7 @@ FAP_SBS_plot <- ggarrange(plot_SBStotal, plot_SBSexposre,
 FAP_SBS_plot
 
 ```
-```{r FAP SBS Mutational signature }
+```{r FAP_SBS_mutational_signature}
 ggplot(SBS_sig_proportion[SBS_sig_proportion$group=='FAP',], aes(x = sample, y = E2, fill = E1)) + geom_bar(stat = "identity") +
     scale_fill_manual(values = all_cols) + theme_bw() + 
   theme(text = element_text(size = 6),
@@ -111,7 +111,7 @@ ggplot(SBS_sig_proportion[SBS_sig_proportion$group=='FAP',], aes(x = sample, y =
     labs(x = "Substitutions", y = "Proportion", fill = "Signatures") + facet_grid(cols = vars(patient),
     scales = "free_x", space = "free")
 ```
-```{r FAP ID Mutational signature + burden}
+```{r FAP_ID_mutational_signature_burden}
 
 sig_order=1:7
 names(sig_order)=c("ID1","ID2","ID18","ID14","IDA","IDB")
@@ -167,7 +167,7 @@ FAP_ID_plot
 
 ```
 
-```{r FAP ID Mutational signature}
+```{r FAP_ID_mutational_signature}
 ggplot(ID_sig_proportion[ID_sig_proportion$group=='FAP',], aes(x = sample, y = E2, fill = E1)) + geom_bar(stat = "identity") +
     scale_fill_manual(values = all_cols) + theme_bw() + 
   theme(text = element_text(size = 6),
@@ -183,7 +183,7 @@ ggplot(ID_sig_proportion[ID_sig_proportion$group=='FAP',], aes(x = sample, y = E
         scales = "free_x", space = "free")
 ```
 
-```{r FAP plot}
+```{r FAP_plot}
 FAP_plot<-ggarrange(FAP_SBS_plot, FAP_ID_plot,
           ncol = 1, nrow=2, common.legend = TRUE, legend = "right",  align = "v") 
 FAP_plot<-annotate_figure(FAP_plot, top = text_grob("FAP", 
@@ -197,7 +197,7 @@ FAP_plot
 
 ```
 
-```{r Control SBS Mutational signature + burden}
+```{r Control_SBS_mutational_signature_burden}
 # SBS
 sig_order=1:10
 names(sig_order)=c("SBS1","SBS5","SBS18","SBS2","SBS13","SBS88",'SBS89','SBSC',"SBS17b",'SBS93')
@@ -226,7 +226,7 @@ plot_SBSexposre = ggplot(SBS_sig_proportion[SBS_sig_proportion$group=='Control',
 
 
 plot_SBStotal <- ggplot(SBS_sig_proportion[SBS_sig_proportion$group == 'Control',], aes(x = sample, y = sbstotal_corr, fill = type)) +
-  geom_bar( alpha = 0.8, stat = "identity",position = position_dodge(0.99), show.legend = FALSE) +  # Add grey bar for 'burden'
+  geom_bar( alpha = 0.8, stat = "identity",position = position_dodge(0.99), show.legend = FALSE) +
   theme_bw() + scale_fill_manual(values = bar_cols)+
   theme(text = element_text(size = 6),
         axis.text.x = element_blank(),
@@ -246,7 +246,7 @@ Control_SBS_plot
 
 ```
 
-```{r Control SBS Mutational signature }
+```{r Control_SBS_mutational_signature }
 ggplot(SBS_sig_proportion[SBS_sig_proportion$group=='Control',], aes(x = sample, y = E2, fill = E1)) + geom_bar(stat = "identity") +
     scale_fill_manual(values = all_cols) + theme_bw() + 
   theme(text = element_text(size = 6),
@@ -262,7 +262,7 @@ ggplot(SBS_sig_proportion[SBS_sig_proportion$group=='Control',], aes(x = sample,
     scales = "free_x", space = "free")
 ```
 
-```{r Control ID Mutational signature + burden}
+```{r Control_ID_mutational_signature_burden}
 
 sig_order=1:7
 names(sig_order)=c("ID1","ID2","ID5", "ID18","ID14","IDA","IDB")
@@ -308,7 +308,7 @@ Control_ID_plot
 
 ```
 
-```{r Control ID Mutational signature}
+```{r Control_ID_mutational_signature}
 ggplot(ID_sig_proportion[ID_sig_proportion$group=='Control',], aes(x = sample, y = E2, fill = E1)) + geom_bar(stat = "identity") +
     scale_fill_manual(values = all_cols) + theme_bw() + 
   theme(text = element_text(size = 6),
@@ -324,7 +324,7 @@ ggplot(ID_sig_proportion[ID_sig_proportion$group=='Control',], aes(x = sample, y
         scales = "free_x", space = "free")
 ```
 
-```{r Control plot}
+```{r Control_plot}
 Control_plot<-ggarrange(Control_SBS_plot, Control_ID_plot,
           ncol = 1, nrow=2, common.legend = TRUE, legend = "right",  align = "v") 
 Control_plot<-annotate_figure(Control_plot, top = text_grob("Control", 
@@ -337,7 +337,7 @@ Control_plot
 ```
 
 
-```{r dot plot SBS1}
+```{r dot_plot_SBS1}
 full_dataset = rbind(database,ctrl_database)
 full_dataset=full_dataset[full_dataset$coverage>=10,]
 full_dataset$group = 'Control'
@@ -368,7 +368,6 @@ labels_html <- c(
 )
 
 p_sbs1 = ggplot(data = df, mapping = aes(x = age, y = SBS1)) +
-    # geom_point(aes(colour = type), size = 0.5, alpha = 0.6) +
     geom_jitter(aes(colour = type), width = 0.3, height = 0, alpha = 0.8, size = 0.5) +
     scale_color_manual(name = "Group", values = dot_cols, labels = labels_html)+
     theme_bw() + theme(panel.grid = element_blank(), panel.border = element_blank(),
@@ -382,9 +381,8 @@ p_sbs1
 
 ```
 
-```{r dot plot, SBS5}
+```{r dot_plot_SBS5}
 p_sbs5 = ggplot(data = df, mapping = aes(x = age, y = SBS5)) +
-    # geom_point(aes(colour = type), size = 0.5, alpha = 0.6) +
     geom_jitter(aes(colour = type), width = 0.3, height = 0, alpha = 0.8, size = 0.5) +
     scale_color_manual(name = "Group", values = dot_cols, labels = labels_html)+
     theme_bw() + theme(panel.grid = element_blank(), panel.border = element_blank(),
@@ -398,9 +396,8 @@ p_sbs5
 
 ```
 
-```{r dot plot SBS18}
+```{r dot_plot_SBS18}
 p_sbs18 = ggplot(data = df, mapping = aes(x = age, y = SBS18)) +
-    # geom_point(aes(colour = type), size = 0.5, alpha = 0.6) +
     geom_jitter(aes(colour = type), width = 0.3, height = 0, alpha = 0.8, size = 0.5) +
     scale_color_manual(name = "Group", values = dot_cols, labels = labels_html)+
     theme_bw() + theme(panel.grid = element_blank(), panel.border = element_blank(),
@@ -415,7 +412,7 @@ p_sbs18
 ```
 
 
-```{r save plots}
+```{r save_plots}
 sbs_plot<-ggarrange(p_sbs1,p_sbs5,p_sbs18,
           ncol = 3, nrow=1, common.legend = TRUE, legend = "bottom",  align = "v") 
 
