@@ -1,0 +1,223 @@
+---
+title: "Fig3c-disease effect"
+author: "Yichen Wang"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+```{r initialisation, include=FALSE}
+knitr::opts_chunk$set(tidy=TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r setup}
+library(ggplot2)
+library(RColorBrewer)
+library(nlme)
+library(ggpubr)
+```
+
+
+```{r load data}
+database = read.csv('../data/fap_database_withexposure.csv',header=T)
+database$type[database$type=='polyp']='diminutive polyp'
+database$type = as.factor(database$type)
+database$type = relevel(database$type , ref = "normal")
+#add number of APC mutations
+database$num_APC = 3-(is.na(database$germlinehit)+is.na(database$somatic1)+is.na(database$somatic2))
+database$num_APC = as.numeric(database$num_APC)
+
+database=database[database$coverage>=10,]
+database$germlinehit= 'APC'
+
+database_exclude_bystander = database[(database$num_APC>=2 | database$type =='normal'),]
+database_exclude_bystander$group_id[database_exclude_bystander$group_id=='normal'] = database_exclude_bystander$sample[database_exclude_bystander$group_id=='normal']
+ctrl_database = read.csv('../data/ctrl_database_withexposure.csv',header=T)
+
+ctrl_database$num_APC=0
+ctrl_database=ctrl_database[ctrl_database$coverage>=10,]
+
+full_dataset = rbind(database_exclude_bystander,ctrl_database)
+full_dataset$germlinehit[is.na(full_dataset$germlinehit)]= 'WT'
+full_dataset$germlinehit= as.factor(full_dataset$germlinehit)
+full_dataset$germlinehit = relevel(full_dataset$germlinehit , ref = "WT")
+```
+
+```{r Disease effect SBS}
+
+dot_cols = c("#DF5B3F", "#F5B46F", "#70A3C4", "black")
+names(dot_cols) = c('Large polyp', 'Diminutive polyp', 'ACF', 'Age effect' )
+
+
+df_sbs_disease = data.frame(matrix(nrow=12,ncol=5))
+colnames(df_sbs_disease) = c('rate','type','group','lower_95_CI','upper_95_CI')
+# ---------SBS18--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_sbs18 <- lme(SBS18~ age, random = ~1|patient/block, data = df, method = "ML")
+df_sbs_disease[1,] = c(intervals(lmm_sbs18, which = "fixed")[["fixed"]]['age','est.'],'SBS18','Age effect',intervals(lmm_sbs18, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_sbs18, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs18 <- lme(SBS18~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[2,] = c(intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typeacf','est.'],'SBS18','ACF',intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_sbs18 <- lme(SBS18~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[3,] = c(intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'SBS18','Diminutive polyp',intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_sbs18 <- lme(SBS18~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[4,] = c(intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'SBS18','Large polyp',intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_sbs18, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+# --------SBS1--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_sbs1 <- lme(SBS1~ age, random = ~1|patient/block, data = df, method = "ML")
+df_sbs_disease[5,] = c(intervals(lmm_sbs1, which = "fixed")[["fixed"]]['age','est.'],'SBS1','Age effect',intervals(lmm_sbs1, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_sbs1, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs1 <- lme(SBS1~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[6,] = c(intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typeacf','est.'],'SBS1','ACF',intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_sbs1 <- lme(SBS1~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[7,] = c(intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'SBS1','Diminutive polyp',intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_sbs1 <- lme(SBS1~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[8,] = c(intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'SBS1','Large polyp',intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_sbs1, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+# ---------SBS5--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_sbs5 <- lme(SBS5~ age, random = ~1|patient/block, data = df, method = "ML")
+df_sbs_disease[9,] = c(intervals(lmm_sbs5, which = "fixed")[["fixed"]]['age','est.'],'SBS5','Age effect',intervals(lmm_sbs5, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_sbs5, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs5 <- lme(SBS5~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[10,] = c(intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typeacf','est.'],'SBS5','ACF',intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_sbs5 <- lme(SBS5~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[11,] = c(intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'SBS5','Diminutive polyp',intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_sbs5 <- lme(SBS5~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_sbs_disease[12,] = c(intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'SBS5','Large polyp',intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_sbs5, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+
+df_sbs_disease$rate = round(as.numeric(df_sbs_disease$rate), digit=2)
+df_sbs_disease$lower_95_CI = round(as.numeric(df_sbs_disease$lower_95_CI), digit=2)
+df_sbs_disease$upper_95_CI= round(as.numeric(df_sbs_disease$upper_95_CI), digit=2)
+df_sbs_disease$type = factor(df_sbs_disease$type,levels = c('Total SBS','SBS1','SBS5','SBS18'))
+
+df_sbs_disease = df_sbs_disease[df_sbs_disease$type %in% c('SBS1','SBS5','SBS18'),]
+p_sbs_disease = ggplot(df_sbs_disease[df_sbs_disease$group!="Age effect",], aes(x=rate, y=type, group=group,color=group))+geom_point()+geom_errorbar(aes(xmin=lower_95_CI, xmax=upper_95_CI),width=.1)+
+  scale_color_manual(values = dot_cols,name = "Group")+
+  theme_bw()+theme(panel.grid=element_blank(),panel.border=element_blank(),axis.line=element_line(colour="black"))+
+  geom_vline(xintercept=0, linetype="dashed", color = "black")+
+  labs(x='Substitutions',y=NULL) #+ scale_x_log10()
+p_sbs_disease
+```
+
+```{r Disease effect ID}
+dot_cols = c("#DF5B3F", "#F5B46F", "#70A3C4", "black")
+names(dot_cols) = c('Large polyp', 'Diminutive polyp', 'ACF', 'Age effect' )
+
+
+df_id_disease = data.frame(matrix(nrow=12,ncol=5))
+colnames(df_id_disease) = c('rate','type','group','lower_95_CI','upper_95_CI')
+
+# --------ID1--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_id1 <- lme(ID1~ age, random = ~1|patient/block, data = df, method = "ML")
+df_id_disease[1,] = c(intervals(lmm_id1, which = "fixed")[["fixed"]]['age','est.'],'ID1','Age effect',intervals(lmm_id1, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_id1, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id1 <- lme(ID1~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[2,] = c(intervals(lmm_id1, which = "fixed")[["fixed"]]['typeacf','est.'],'ID1','ACF',intervals(lmm_id1, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_id1, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_id1 <- lme(ID1~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[3,] = c(intervals(lmm_id1, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'ID1','Diminutive polyp',intervals(lmm_id1, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_id1, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_id1 <- lme(ID1~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[4,] = c(intervals(lmm_id1, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'ID1','Large polyp',intervals(lmm_id1, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_id1, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+# ---------ID2--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_id2 <- lme(ID2~ age, random = ~1|patient/block, data = df, method = "ML")
+df_id_disease[5,] = c(intervals(lmm_id2, which = "fixed")[["fixed"]]['age','est.'],'ID2','Age effect',intervals(lmm_id2, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_id2, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id2 <- lme(ID2~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[6,] = c(intervals(lmm_id2, which = "fixed")[["fixed"]]['typeacf','est.'],'ID2','ACF',intervals(lmm_id2, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_id2, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_id2 <- lme(ID2~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[7,] = c(intervals(lmm_id2, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'ID2','Diminutive polyp',intervals(lmm_id2, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_id2, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_id2 <- lme(ID2~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[8,] = c(intervals(lmm_id2, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'ID2','Large polyp',intervals(lmm_id2, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_id2, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+# ---------ID5--------
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_id5 <- lme(ID5~ age, random = ~1|patient/block, data = df, method = "ML")
+df_id_disease[9,] = c(intervals(lmm_id5, which = "fixed")[["fixed"]]['age','est.'],'ID5','Age effect',intervals(lmm_id5, which = "fixed")[["fixed"]]['age','lower'],
+            intervals(lmm_id5, which = "fixed")[["fixed"]]['age','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id5 <- lme(ID5~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[10,] = c(intervals(lmm_id5, which = "fixed")[["fixed"]]['typeacf','est.'],'ID5','ACF',intervals(lmm_id5, which = "fixed")[["fixed"]]['typeacf','lower'],
+            intervals(lmm_id5, which = "fixed")[["fixed"]]['typeacf','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf'),]
+lmm_id5 <- lme(ID5~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[11,] = c(intervals(lmm_id5, which = "fixed")[["fixed"]]['typediminutive polyp','est.'],'ID5','Diminutive polyp',intervals(lmm_id5, which = "fixed")[["fixed"]]['typediminutive polyp','lower'],
+            intervals(lmm_id5, which = "fixed")[["fixed"]]['typediminutive polyp','upper'])
+
+df = full_dataset[full_dataset$type %in%  c('normal','diminutive polyp','acf','large polyp'),]
+lmm_id5 <- lme(ID5~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+df_id_disease[12,] = c(intervals(lmm_id5, which = "fixed")[["fixed"]]['typelarge polyp','est.'],'ID5','Large polyp',intervals(lmm_id5, which = "fixed")[["fixed"]]['typelarge polyp','lower'],
+            intervals(lmm_id5, which = "fixed")[["fixed"]]['typelarge polyp','upper'])
+
+df_id_disease$rate = round(as.numeric(df_id_disease$rate), digit=2)
+df_id_disease$lower_95_CI = round(as.numeric(df_id_disease$lower_95_CI), digit=2)
+df_id_disease$upper_95_CI= round(as.numeric(df_id_disease$upper_95_CI), digit=2)
+df_id_disease$type = factor(df_id_disease$type,levels = c('Total Indels','ID1','ID2','ID5'))
+
+df_id_disease = df_id_disease[df_id_disease$type %in% c('ID1','ID2','ID5'),]
+p_id_disease = ggplot(df_id_disease[df_id_disease$group!="Age effect",], aes(x=rate, y=type, group=group,color=group))+geom_point()+geom_errorbar(aes(xmin=lower_95_CI, xmax=upper_95_CI),width=.1)+scale_color_manual(values = dot_cols, name = "Group")+
+        theme_bw()+theme(panel.grid=element_blank(),panel.border=element_blank(),axis.line=element_line(colour="black"))+
+        geom_vline(xintercept=0, linetype="dashed", color = "black")+
+        labs(x='Indels',y=NULL) #+ scale_x_continuous(trans='log10')
+p_id_disease
+```
+
+```{r, merge dot plot}
+dot_plot = ggarrange(p_sbs_disease, p_id_disease,
+          ncol = 2, nrow=1, common.legend = TRUE, legend = "right",  align = "v") 
+# pdf(paste0("../../figure/Fig3/disease_effect.pdf"),width = 7, height = 3)
+# dot_plot
+# dev.off()
+dot_plot
+```

@@ -1,0 +1,68 @@
+---
+title: "SV_CNV_RT"
+author: "Yichen Wang"
+output:   
+  html_document:
+    keep_md: yes
+---
+
+```{r initialisation, include=FALSE}
+knitr::opts_chunk$set(tidy=TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r setup}
+library(ggplot2)
+library(RColorBrewer)
+library(nlme)
+library(tidyverse)
+```
+
+```{r data}
+database = read.csv('../data/fap_database_withexposure.csv',header=T)
+database$type = as.factor(database$type)
+database$type = relevel(database$type , ref = "normal")
+
+#add number of APC mutations
+database$num_APC = 3-(is.na(database$germlinehit)+is.na(database$somatic1)+is.na(database$somatic2))
+database$num_APC = as.numeric(database$num_APC)
+
+database=database[database$coverage>=10,]
+database$germlinehit= 'APC'
+
+database_exclude_bystander = database[(database$num_APC>=2 | database$type =='normal' ),]
+database_exclude_bystander$group_id[database_exclude_bystander$group_id=='normal'] = database_exclude_bystander$sample[database_exclude_bystander$group_id=='normal']
+```
+
+```{r test RT}
+pvalues_lst=c()
+lmm_RT <- lme(RT ~ age+type, random = ~1|patient/block/group_id, data = database_exclude_bystander, method = "ML")
+summary(lmm_RT)
+pvalues_lst=c(pvalues_lst,summary(lmm_RT)$tTable[ , "p-value"])
+
+fixed.m1 <- data.frame(fixef(lmm_RT))
+intervals(lmm_RT, which = "fixed")
+```
+
+```{r test SV}
+lmm_SV <- lme(SV ~ age+type, random = ~1|patient/block/group_id, data = database_exclude_bystander, method = "ML")
+summary(lmm_SV)
+pvalues_lst=c(pvalues_lst,summary(lmm_SV)$tTable[ , "p-value"])
+
+fixed.m1 <- data.frame(fixef(lmm_SV))
+intervals(lmm_SV, which = "fixed")
+
+```
+
+```{r test CNV}
+lmm_CNV <- lme(CNV ~ age+type, random = ~1|patient/block/group_id, data = database_exclude_bystander, method = "ML")
+summary(lmm_CNV)
+pvalues_lst=c(pvalues_lst,summary(lmm_CNV)$tTable[ , "p-value"])
+
+fixed.m1 <- data.frame(fixef(lmm_CNV))
+intervals(lmm_CNV, which = "fixed")
+```
+
+```{r}
+p_corrected =  p.adjust(pvalues_lst, method = "BH")
+p_table = data.frame(p=pvalues_lst,p_adj=p_corrected)
+```

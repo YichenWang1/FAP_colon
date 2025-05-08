@@ -1,0 +1,4 @@
+parent,node,branch.length,label,isTip,x,y,branch,angle
+3,1,825,PD37509b8,TRUE,825,1,412.5,180
+3,2,915,PD37509b9,TRUE,915,2,457.5,360
+3,3,0,NA,FALSE,0,1.5,0,270

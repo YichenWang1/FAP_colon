@@ -1,0 +1,359 @@
+---
+title: "hypothesis_testing"
+author: "Yichen Wang"
+output:   
+  html_document:
+    keep_md: yes
+---
+
+```{r initialisation, include=FALSE}
+knitr::opts_chunk$set(tidy=TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r setup}
+library(ggplot2)
+library(RColorBrewer)
+library(nlme)
+library(tidyverse)
+```
+
+```{r Prepare for the disease effect plotting}
+
+dot_cols = c("#DF5B3F", "#F5B46F", "#70A3C4", "black")
+names(dot_cols) = c('Small and large polyp', 'Diminutive polyp', 'ACF', 'Age effect' )
+
+
+df_sbs_disease = data.frame(matrix(nrow=12,ncol=5))
+colnames(df_sbs_disease) = c('rate','type','group','lower_95_CI','upper_95_CI')
+```
+
+```{r read file}
+database = read.csv('../data/fap_database_withexposure.csv',header=T)
+database$type = as.factor(database$type)
+database$type = relevel(database$type , ref = "normal")
+
+#add number of APC mutations
+database$num_APC = 3-(is.na(database$germlinehit)+is.na(database$somatic1)+is.na(database$somatic2))
+database$num_APC = as.numeric(database$num_APC)
+
+database=database[database$coverage>=10,]
+database$germlinehit= 'APC'
+
+database_exclude_bystander = database[(database$num_APC>=2 | database$type =='normal' ),]
+database_exclude_bystander$group_id[database_exclude_bystander$group_id=='normal'] = database_exclude_bystander$sample[database_exclude_bystander$group_id=='normal']
+```
+
+```{r Add control normal colon data, echo=FALSE}
+ctrl_database = read.csv('../data/ctrl_database_withexposure.csv',header=T)
+ctrl_database$num_APC=0
+ctrl_database=ctrl_database[ctrl_database$coverage>=10,]
+
+full_dataset = rbind(database_exclude_bystander,ctrl_database)
+full_dataset$germlinehit[is.na(full_dataset$germlinehit)]= 'WT'
+full_dataset$germlinehit= as.factor(full_dataset$germlinehit)
+full_dataset$germlinehit = relevel(full_dataset$germlinehit , ref = "WT")
+pvalues_lst=c()
+```
+
+
+# Whether germline APC mutation leads to incresed sbs burden
+
+```{r SBS total, germline, model selection}
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_sbs <- lme(sbstotal_corr~  age:germlinehit , random = ~1|patient/block, data = df, method = "ML")
+lmm2_sbs <- lme(sbstotal_corr~ age, random = ~1|patient/block, data = df, method = "ML")
+anova(lmm_sbs,lmm2_sbs)
+```
+
+```{r SBS total, germline, model}
+df = database_exclude_bystander[database_exclude_bystander$type %in%  c('normal'),]
+lmm2_sbs <- lme(sbstotal_corr ~ age  , random = ~1|patient/block, data = df, method = "ML")
+summary(lmm2_sbs)
+intervals(lmm2_sbs, which = "fixed")
+pvalues_lst=c(pvalues_lst,summary(lmm2_sbs)$tTable[ , "p-value"])
+```
+
+
+# Whether germline APC mutation leads to incresed Indel burden
+
+```{r ID total, germline, model selection}
+df = full_dataset[full_dataset$type %in%  c('normal'),]
+lmm_id <- lme(indeltotal_corr ~  age:germlinehit , random = ~1|patient/block, data = df, method = "ML")
+lmm2_id <- lme(indeltotal_corr ~ age, random = ~1|patient/block, data = df, method = "ML")
+anova(lmm_id,lmm2_id)
+
+```
+
+
+```{r ID total, germline, model}
+df = database_exclude_bystander[database_exclude_bystander$type %in%  c('normal'),]
+lmm2_id <- lme(indeltotal_corr ~ age  , random = ~1|patient, data = df, method = "ML")
+summary(lmm2_id)
+
+fixed.m1 <- data.frame(fixef(lmm2_id))
+intervals(lmm2_id, which = "fixed")
+pvalues_lst=c(pvalues_lst,summary(lmm2_id)$tTable[ , "p-value"])
+```
+
+```{r Calcultae P-adjusted for SBS and ID burden in normal crypts}
+p_corrected =  p.adjust(pvalues_lst, method = "BH")
+p_table = data.frame(p=pvalues_lst,p_adj=p_corrected)
+```
+
+## Whetehr bystander crypts are the same as normal
+```{r construct dataset for bystander crypts, echo=FALSE}
+database_bystander = database[(database$num_APC<2 & database$type %in% c('normal','acf')),]
+database_bystander$group_id[database_bystander$group_id=='normal'] = database_bystander$sample[database_bystander$group_id=='normal']
+ctrl_database = read.csv('../data/ctrl_database_withexposure.csv',header=T)
+ctrl_database$num_APC=0
+ctrl_database=ctrl_database[ctrl_database$coverage>=10,]
+
+full_dataset_bystander = rbind(database_bystander,ctrl_database)
+full_dataset_bystander$germlinehit[is.na(full_dataset_bystander$germlinehit)]= 'WT'
+full_dataset_bystander$germlinehit= as.factor(full_dataset_bystander$germlinehit)
+full_dataset_bystander$germlinehit = relevel(full_dataset_bystander$germlinehit , ref = "WT")
+
+```
+
+
+```{r SBS total, bystander}
+df = full_dataset_bystander
+lmm_sbs <- lme(sbstotal_corr~ age+germlinehit, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs)
+```
+
+```{r ID total, bystander}
+df = full_dataset_bystander
+lmm_id <- lme(indeltotal_corr~ age+germlinehit, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id)
+```
+
+
+# Whether ACF leads to incresed sbs burden
+```{r SBS18, ACF}
+pvalues_lst=c()
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs18 <- lme(SBS18~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs18)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs18)$tTable[ , "p-value"])
+intervals(lmm_sbs18, which = "fixed")
+```
+
+
+```{r SBS1, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs1 <- lme(SBS1~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs1)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs1)$tTable[ , "p-value"])
+intervals(lmm_sbs1, which = "fixed")
+```
+
+```{r SBS5, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs5 <- lme(SBS5~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs5)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs5)$tTable[ , "p-value"])
+intervals(lmm_sbs5, which = "fixed")
+```
+
+```{r SBS total, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_sbs <- lme(sbstotal_corr~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs)$tTable[ , "p-value"])
+intervals(lmm_sbs, which = "fixed")
+```
+
+# Whether ACF leads to incresed Indel burden
+```{r ID1, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id1 <- lme(ID1~  age +type  , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id1)
+pvalues_lst=c(pvalues_lst,summary(lmm_id1)$tTable[ , "p-value"])
+intervals(lmm_id1, which = "fixed")
+```
+
+```{r ID2, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id2 <- lme(ID2 ~  age +type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id2)
+pvalues_lst=c(pvalues_lst,summary(lmm_id2)$tTable[ , "p-value"])
+intervals(lmm_id2, which = "fixed")
+```
+
+```{r ID5, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id5 <- lme(ID5 ~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id5)
+pvalues_lst=c(pvalues_lst,summary(lmm_id5)$tTable[ , "p-value"])
+intervals(lmm_id5, which = "fixed")
+```
+
+```{r ID total, ACF}
+df = full_dataset[full_dataset$type %in%  c('normal','acf'),]
+lmm_id <- lme(indeltotal_corr~  age+type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id)
+pvalues_lst=c(pvalues_lst,summary(lmm_id)$tTable[ , "p-value"])
+intervals(lmm_id, which = "fixed")
+```
+```{r adjusted P table, ACF}
+p_corrected_acf =  p.adjust(pvalues_lst, method = "BH")
+p_table_acf = data.frame(p=pvalues_lst,p_adj=p_corrected_acf)
+```
+
+# Whether Polyp leads to incresed sbs burden
+```{r SBS18, diminutive polyps}
+pvalues_lst=c()
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_sbs18 <- lme(SBS18~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs18)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs18)$tTable[ , "p-value"])
+intervals(lmm_sbs18, which = "fixed")
+```
+
+
+```{r SBS1, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_sbs1 <- lme(SBS1~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs1)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs1)$tTable[ , "p-value"])
+intervals(lmm_sbs1, which = "fixed")
+```
+
+
+```{r SBS5, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_sbs5 <- lme(SBS5~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs5)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs5)$tTable[ , "p-value"])
+intervals(lmm_sbs5, which = "fixed")
+```
+
+
+```{r SBS total, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_sbs <- lme(sbstotal_corr~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs)$tTable[ , "p-value"])
+intervals(lmm_sbs, which = "fixed")
+```
+
+
+# Whether polyps leads to incresed Indel burden
+```{r ID1, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_id1 <- lme(ID1~  age +type  , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id1)
+pvalues_lst=c(pvalues_lst,summary(lmm_id1)$tTable[ , "p-value"])
+intervals(lmm_id1, which = "fixed")
+```
+
+
+```{r ID2, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_id2 <- lme(ID2 ~  age +type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id2)
+pvalues_lst=c(pvalues_lst,summary(lmm_id2)$tTable[ , "p-value"])
+intervals(lmm_id2, which = "fixed")
+```
+
+
+```{r ID5, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_id5 <- lme(ID5 ~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id5)
+pvalues_lst=c(pvalues_lst,summary(lmm_id5)$tTable[ , "p-value"])
+intervals(lmm_id5, which = "fixed")
+```
+
+
+```{r ID total, diminutive polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf'),]
+lmm_id <- lme(indeltotal_corr~  age+type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id)
+pvalues_lst=c(pvalues_lst,summary(lmm_id)$tTable[ , "p-value"])
+intervals(lmm_id, which = "fixed")
+```
+
+
+```{r adjuested P table, diminutive polyps}
+p_corrected_polyp =  p.adjust(pvalues_lst, method = "BH")
+p_table_polyp = data.frame(p=pvalues_lst,p_adj=p_corrected_polyp)
+```
+
+# Whether large polyp leads to incresed sbs burden
+```{r SBS18, large polyps}
+pvalues_lst=c()
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_sbs18 <- lme(SBS18~ type+age, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs18)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs18)$tTable[ , "p-value"])
+intervals(lmm_sbs18, which = "fixed")
+```
+
+```{r SBS1, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_sbs1 <- lme(SBS1~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs1)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs1)$tTable[ , "p-value"])
+intervals(lmm_sbs1, which = "fixed")
+```
+
+```{r SBS5, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_sbs5 <- lme(SBS5~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs5)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs5)$tTable[ , "p-value"])
+intervals(lmm_sbs5, which = "fixed")
+```
+
+
+```{r SBS total, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_sbs <- lme(sbstotal_corr~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_sbs)
+pvalues_lst=c(pvalues_lst,summary(lmm_sbs)$tTable[ , "p-value"])
+intervals(lmm_sbs, which = "fixed")
+```
+
+# Whether large polyp leads to incresed Indel burden
+```{r ID1, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_id1 <- lme(ID1~  age +type  , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id1)
+pvalues_lst=c(pvalues_lst,summary(lmm_id1)$tTable[ , "p-value"])
+intervals(lmm_id1, which = "fixed")
+```
+
+```{r ID2, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_id2 <- lme(ID2 ~  age +type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id2)
+pvalues_lst=c(pvalues_lst,summary(lmm_id2)$tTable[ , "p-value"])
+intervals(lmm_id2, which = "fixed")
+```
+
+```{r ID5, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_id5 <- lme(ID5 ~ age+type, random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id5)
+pvalues_lst=c(pvalues_lst,summary(lmm_id5)$tTable[ , "p-value"])
+intervals(lmm_id5, which = "fixed")
+```
+
+
+```{r ID total, large polyps}
+df = full_dataset[full_dataset$type %in%  c('normal','polyp','acf','large polyp'),]
+lmm_id <- lme(indeltotal_corr~  age+type , random = ~1|patient/block/group_id, data = df, method = "ML")
+summary(lmm_id)
+pvalues_lst=c(pvalues_lst,summary(lmm_id)$tTable[ , "p-value"])
+intervals(lmm_id, which = "fixed")
+```
+
+```{r adjusted P table, large polyps}
+p_corrected_large_polyp =  p.adjust(pvalues_lst, method = "BH")
+p_table_large_polyp = data.frame(p=pvalues_lst,p_adj=p_corrected_large_polyp)
+```
+
+
+

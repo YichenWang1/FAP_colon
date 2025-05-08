@@ -1,0 +1,91 @@
+---
+title: "APC timing"
+author: "Yichen Wang"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+```{r initialisation, include=FALSE}
+knitr::opts_chunk$set(tidy=TRUE,warning = FALSE, message = FALSE)
+```
+
+
+```{r setup}
+library(ggtree)
+library(ape)
+library(nlme)
+library(dplyr)
+```
+
+```{r read file}
+database = read.csv('../data/fap_database_withexposure.csv',header=T)
+database$type = as.factor(database$type)
+database$type = relevel(database$type , ref = "normal")
+
+#add number of APC mutations
+database$num_APC = 3-(is.na(database$germlinehit)+is.na(database$somatic1)+is.na(database$somatic2))
+database$num_APC = as.numeric(database$num_APC)
+
+database=database[database$coverage>=10,]
+database$germlinehit= 'APC'
+
+database_exclude_bystander = database[(database$num_APC>=2 | database$type =='normal' ),]
+database_exclude_bystander$group_id[database_exclude_bystander$group_id=='normal'] = database_exclude_bystander$sample[database_exclude_bystander$group_id=='normal']
+```
+
+```{r}
+df = database_exclude_bystander[database_exclude_bystander$type %in%  c('normal'),]
+lmm_sbs5 <- lme(SBS5~ age-1, random = ~age-1|patient, data = df, method = "ML")
+summary(lmm_sbs5)
+```
+
+```{r lmm test}
+df_trunk_length=read.csv("../data/phylogenetic_tree/ACF_polyp_trunk_length.csv")
+fixed_slope <- fixef(lmm_sbs5)["age"]
+ranef_patient <- ranef(lmm_sbs5) %>%
+  tibble::rownames_to_column("patient") %>%
+  rename(SBS5_random_slope_patient = age)
+
+
+# df_trunk_length <- df_trunk_length %>%
+#   left_join(ranef_patient, by = "patient")
+# df_trunk_length <- df_trunk_length %>%
+#   mutate(SBS5_full_slope = fixed_slope + SBS5_random_slope_patient,
+#          age_onset_upperlim = SBS5_trunk / full_slope) %>%
+#   mutate(age_onset_upperlim = if_else(age_onset_upperlim > age, age, age_onset_upperlim))
+
+# write.csv(df_trunk_length,"../data/ACF_polyp_trunk_length.csv", quote = F, row.names = F)
+```
+
+```{r more than one trunk muts}
+pvalues_lst=c()
+df_trunk_length$trunk_driver_1 = T
+df_trunk_length$trunk_driver_1[df_trunk_length$trunk_somatic_driver>1] = F
+
+lmm <- lme(SBS_total_branch ~ trunk_driver_1, random = ~1|patient/group, data = df_trunk_length, method = "ML")
+summary(lmm) #SBS1
+
+
+df_trunk=df_trunk_length[,c(1:5,7:10,17)]
+df_trunk=unique(df_trunk)
+
+lmm <- lme(SBS_total_trunk ~ trunk_driver_1, random = ~1|patient, data = df_trunk, method = "ML")
+summary(lmm) #SBS5,SBStotal
+pvalues_lst=c(pvalues_lst,summary(lmm)$tTable[ , "p-value"])
+```
+```{r polyps vs ACF trunk}
+lmm <- lme(SBS_total_trunk ~ type, random = ~1|patient, data = df_trunk, method = "ML")
+summary(lmm)
+pvalues_lst=c(pvalues_lst,summary(lmm)$tTable[ , "p-value"])
+```
+```{r polyps vs ACF branch}
+lmm <- lme(SBS_total_branch ~ type, random = ~1|patient/group, data = df_trunk_length, method = "ML")
+summary(lmm)
+pvalues_lst=c(pvalues_lst,summary(lmm)$tTable[ , "p-value"])
+```
+
+```{r}
+p_corrected =  p.adjust(pvalues_lst, method = "BH")
+p_table = data.frame(p=pvalues_lst,p_adj=p_corrected)
+```
