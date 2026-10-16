@@ -15,3 +15,8 @@ data/driver_mutation/backups/
 # knitted figure assets for the current oncoplots.Rmd)
 Fig1_Driver_mutation/*/
 !Fig1_Driver_mutation/oncoplots_files/
+!Fig1_Driver_mutation/individual_apc_driver_lollipops_files/
+
+# backup copies and knit logs
+*.bak*
+*.log

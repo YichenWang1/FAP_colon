@@ -25,14 +25,16 @@ suppressPackageStartupMessages({
 ROOT     <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo"
 OUT_DIR  <- file.path(ROOT, "Fig1_Driver_mutation")
 FAP_DB   <- file.path(ROOT, "data/fap_database_withexposure.csv")
+CNV_CSV  <- file.path(ROOT, "data/CNV_SV_RT/CNV.csv")
 
-CATEGORIES <- c("bc", "aca", "microadenoma", "polyp", "trapped")
-SEVERITY_ORDER <- c("bc", "aca", "microadenoma", "polyp")
+CATEGORIES <- c("bc", "aca", "microadenoma", "diminutive", "large", "trapped")
+SEVERITY_ORDER <- c("bc", "aca", "microadenoma", "diminutive", "large")
 CATEGORY_TITLES <- c(
   bc      = "Bifurcating crypts (non-trapped)",
   aca     = "Aberrant Crypt Aggregates",
   microadenoma = "Microadenomas",
-  polyp   = "Polyps",
+  diminutive = "Diminutive polyps",
+  large   = "Large polyps",
   trapped = "Trapped bystanders (normal/RC)"
 )
 
@@ -57,7 +59,8 @@ category_rows <- list(
   bc      = db[db$type == "bc", ],
   aca     = db[db$type == "aca", ],
   microadenoma = db[db$type %in% c("monocryptal_adenoma", "oligocryptal_adenoma"), ],
-  polyp   = db[db$type %in% c("diminutive_polyp", "large_polyp"), ],
+  diminutive = db[db$type == "diminutive_polyp", ],
+  large   = db[db$type == "large_polyp", ],
   trapped = db[db$type == "trapped_crypt", ]
 )
 ```
@@ -68,11 +71,44 @@ somatic_drivers <- somatic_drivers[somatic_drivers$is.supressor == "Y" | somatic
 trapped_by_group <- tapply(db$is_trapped, db$group_id, any) 
 somatic_drivers$is_trapped <- trapped_by_group[somatic_drivers$Group_ID]
 
+## Second hits: a non-APC driver mutation that falls inside a copy number
+## LOSS or LOH segment (minor == 0) carried by at least one of the same crypts
+## has lost both alleles, so it is drawn as Multi_Hit rather than as a single
+## point mutation. Restricted to minor == 0 deliberately: a gain over a hotspot
+## (KRAS G12D on a 3:1 gain in PD44721I_PLP_02_2) is a different event from
+## biallelic inactivation and keeps its own classification.
+## APC is excluded here because its chr5 LOH is already added below via is_cnv.
+## NOTE somatic_drivers$Sample is a ';'-joined list of crypts, not one crypt.
+cnv_all <- read.csv(CNV_CSV, stringsAsFactors = FALSE)
+
+second_hit_keys <- local({
+  sd2 <- somatic_drivers[somatic_drivers$Gene != "APC", ]
+  sd2$chr <- ifelse(grepl("^chr", sd2$Chr), sd2$Chr, paste0("chr", sd2$Chr))
+  keys <- character(0)
+  for (i in seq_len(nrow(sd2))) {
+    r <- sd2[i, ]
+    o <- cnv_all[cnv_all$group_id == r$Group_ID & cnv_all$chr == r$chr &
+                 cnv_all$minor == 0 &
+                 cnv_all$start <= as.numeric(r$Start) &
+                 cnv_all$end   >= as.numeric(r$Start), ]
+    if (!nrow(o)) next
+    shared <- intersect(trimws(strsplit(r$Sample, ";")[[1]]), unique(o$sample))
+    if (!length(shared)) next
+    cat(sprintf("second hit: %-8s %-13s in %-18s (%s, %d/%d crypts shared)\n",
+                r$Gene, r$Mutation, r$Group_ID,
+                paste(unique(o$CNV.status), collapse = ","), length(shared),
+                length(trimws(strsplit(r$Sample, ";")[[1]]))))
+    keys <- c(keys, paste(r$Gene, r$Group_ID, sep = "\r"))
+  }
+  unique(keys)
+})
+
 driver_details <- list(
   bc      = somatic_drivers[somatic_drivers$Type == "bc" & !somatic_drivers$is_trapped, ],
   aca     = somatic_drivers[somatic_drivers$Type == "aca" & !somatic_drivers$is_trapped, ],
   microadenoma = somatic_drivers[somatic_drivers$Type %in% c("monocryptal_adenoma", "oligocryptal_adenoma"), ],
-  polyp   = somatic_drivers[somatic_drivers$Type %in% c("diminutive_polyp", "large_polyp"), ],
+  diminutive = somatic_drivers[somatic_drivers$Type == "diminutive_polyp", ],
+  large   = somatic_drivers[somatic_drivers$Type == "large_polyp", ],
   trapped = somatic_drivers[somatic_drivers$Type == "trapped_crypt", ]
 )
 ```
@@ -90,6 +126,9 @@ build_events <- function(cat) {
   # collapse >1 distinct classification for the same (Gene, Group_ID) to Multi_Hit
   ev <- aggregate(Variant_Classification ~ Gene + Group_ID, data = ev,
                    FUN = function(x) if (length(unique(x)) > 1) "Multi_Hit" else x[1])
+  # biallelic by mutation + overlapping LOH/loss (see second_hit_keys above)
+  ev$Variant_Classification[paste(ev$Gene, ev$Group_ID, sep = "\r") %in%
+                              second_hit_keys] <- "Multi_Hit"
   ev
 }
 
@@ -104,10 +143,10 @@ memo_sort_samples <- function(bin_mat) {
 }
 ```
 
-## Combined oncoplot (Aberrant Crypt Aggregates | Microadenomas | Adenomatous Polyps).
+## Combined oncoplot (Aberrant Crypt Aggregates | Microadenomas | Diminutive polyps | Large polyps).
 
 ```{r combined-setup}
-COMBINED_ORDER <- c("aca", "microadenoma", "polyp")
+COMBINED_ORDER <- c("aca", "microadenoma", "diminutive", "large")
 
 all_groups_by_cat <- lapply(COMBINED_ORDER, function(cat) unique(category_rows[[cat]]$group_id))
 names(all_groups_by_cat) <- COMBINED_ORDER
@@ -121,7 +160,7 @@ bin_mat_all <- matrix(0, nrow = length(genes_all), ncol = n_total_all,
                        dimnames = list(genes_all, full_groups_all))
 for (i in seq_len(nrow(ev_all))) bin_mat_all[ev_all$Gene[i], ev_all$Group_ID[i]] <- 1
 
-# order: block by category (aca, then microadenoma, then polyp, so the two
+# order: block by category (aca, microadenoma, diminutive, large, so the
 # adenoma subtypes stay contiguous and in that order), memoSort mutated
 # samples within each block, WT samples appended per block.
 sample_order_all <- unlist(lapply(COMBINED_ORDER, function(cat) {
@@ -133,7 +172,17 @@ sample_order_all <- unlist(lapply(COMBINED_ORDER, function(cat) {
     c(ord$sample_order, sort(wt))
   } else sort(wt)
 }))
-gene_order_all <- names(sort(rowSums(bin_mat_all), decreasing = TRUE))
+# Genes are ordered by the NUMBER OF LESIONS carrying a mutation, which is the
+# same quantity as the per-panel percentages printed beside each row. Ties are
+# broken by how many of those lesions are Multi_Hit, so a biallelic gene leads
+# its count block without jumping over genes found in more lesions -- weighting
+# Multi_Hit as two events would have put SOX9 (2 lesions) above KRAS and TP53
+# (3 each), contradicting the counts and the labels.
+n_lesions_all <- rowSums(bin_mat_all)
+n_multihit_all <- tapply(ev_all$Variant_Classification == "Multi_Hit", ev_all$Gene, sum)
+n_multihit_all <- as.integer(n_multihit_all[names(n_lesions_all)])
+n_multihit_all[is.na(n_multihit_all)] <- 0L
+gene_order_all <- names(n_lesions_all)[order(-n_lesions_all, -n_multihit_all)]
 
 plot_df <- expand.grid(Gene = gene_order_all, Group_ID = sample_order_all, stringsAsFactors = FALSE)
 plot_df <- merge(plot_df, ev_all, by = c("Gene", "Group_ID"), all.x = TRUE)
@@ -150,13 +199,14 @@ pct_by_type <- do.call(rbind, lapply(COMBINED_ORDER, function(cat) {
              stringsAsFactors = FALSE)
 }))
 
-# Three visual panels, each with its own strip title/N.
+# Four visual panels, each with its own strip title/N.
 cat_lookup <- setNames(rep(COMBINED_ORDER, sapply(all_groups_by_cat, length)), full_groups_all)
 
 panel_labels <- c(
   aca          = paste0(CATEGORY_TITLES[["aca"]], "\n(N = ", length(all_groups_by_cat$aca), ")"),
   microadenoma = paste0("Microadenomas\n(N = ", length(all_groups_by_cat$microadenoma), ")"),
-  polyp        = paste0("Adenomatous Polyps\n(N = ", length(all_groups_by_cat$polyp), ")")
+  diminutive   = paste0("Diminutive polyps\n(N = ", length(all_groups_by_cat$diminutive), ")"),
+  large        = paste0("Large polyps\n(N = ", length(all_groups_by_cat$large), ")")
 )
 plot_df$Category <- factor(panel_labels[cat_lookup[as.character(plot_df$Group_ID)]],
                             levels = panel_labels[COMBINED_ORDER])
@@ -167,12 +217,10 @@ pct_by_type$Category <- factor(panel_labels[pct_by_type$cat], levels = panel_lab
 pct_max <- max(pct_by_type$pct, na.rm = TRUE)
 n_cat <- lengths(all_groups_by_cat)[COMBINED_ORDER]
 
-# chunk-option figure dimensions for the plotting chunk below (knitr
-# evaluates fig.width/fig.height as R expressions against the environment at
-# the point each chunk runs, so these just need to exist before then).
-fig_height <- 0.35 * length(gene_order_all) + 3.5
-fig_width  <- max(8, 0.2 * n_total_all + 5)
-legend_height <- 0.5
+FONT_FAMILY <- "Helvetica"
+fig_width   <- 7.09   # ~180mm, full two-column journal figure width
+fig_height  <- 2.70   # ~69mm
+legend_height <- 0.22
 ```
 
 
@@ -186,23 +234,28 @@ for (i in seq_along(COMBINED_ORDER)) {
   pct_cat <- pct_by_type[pct_by_type$cat == cat_i, ]
 
   tile_cat <- ggplot(df_cat, aes(x = Group_ID, y = Gene, fill = Variant_Classification)) +
-    geom_tile(color = "white", linewidth = 0.2) +
+    geom_tile(color = "white", linewidth = 0.15) +
     scale_fill_manual(values = vc_cols, breaks = setdiff(VC_LEVELS, "None"), name = NULL, drop = FALSE) +
     labs(title = panel_labels[[cat_i]]) +
-    theme_minimal() +
+    theme_minimal(base_family = FONT_FAMILY) +
     theme(axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(),
-          axis.text.y = if (i == 1) element_text(size = 13) else element_blank(),
-          panel.grid = element_blank(), plot.margin = margin(2, 2, 2, 2),
+          axis.text.y = if (i == 1) element_text(size = 5.5) else element_blank(),
+          panel.grid = element_blank(), plot.margin = margin(1, 1, 1, 1),
           legend.position = "none",
-          plot.title = element_text(face = "bold", size = 11, hjust = 0.5))
+          plot.title = element_text(face = "bold", size = 7, hjust = 0.5))
 
   pct_plot_cat <- ggplot(pct_cat, aes(x = pct, y = Gene)) +
     geom_col(fill = "grey40", width = 0.7, na.rm = TRUE) +
-    geom_text(aes(label = paste0(pct, "%")), hjust = -0.15, size = 3.2, na.rm = TRUE) +
-    scale_x_continuous(limits = c(0, pct_max * 1.6 + 25), expand = c(0, 0)) +
+    geom_text(aes(label = paste0(pct, "%")), hjust = -0.15, size = 5.5 / .pt,
+              family = FONT_FAMILY, na.rm = TRUE) +
+    # Leave room for the widest label ("100%") after the longest bar, and do
+    # not clip text at the panel edge: the "100%" labels in the Microadenomas
+    # and Large polyps panels were being cut off.
+    scale_x_continuous(limits = c(0, pct_max * 2.1), expand = c(0, 0)) +
     scale_y_discrete(drop = FALSE) +
+    coord_cartesian(clip = "off") +
     theme_void() +
-    theme(plot.margin = margin(2, 10, 2, 2))
+    theme(plot.margin = margin(1, if (i == length(COMBINED_ORDER)) 10 else 6, 1, 1))
 
   blocks[[2 * i - 1]] <- tile_cat
   blocks[[2 * i]]     <- pct_plot_cat
@@ -217,7 +270,14 @@ main_row <- patchwork::wrap_plots(blocks, nrow = 1, widths = widths)
 legend_ref <- ggplot(plot_df, aes(x = Group_ID, y = Gene, fill = Variant_Classification)) +
   geom_tile() +
   scale_fill_manual(values = vc_cols, breaks = setdiff(VC_LEVELS, "None"), name = NULL, drop = FALSE) +
-  theme(legend.position = "bottom", legend.text = element_text(size = 12))
+  guides(fill = guide_legend(nrow = 1)) +
+  theme(text = element_text(family = FONT_FAMILY),
+        legend.position = "bottom",
+        # keep each label tight to its own swatch, and put the larger gap
+        # between items, so labels group with the correct colour block
+        legend.text = element_text(size = 5.5, margin = margin(l = 1, unit = "pt")),
+        legend.key.spacing.x = unit(3, "mm"),
+        legend.key.size = unit(2.5, "mm"))
 legend_grob <- ggplotGrob(legend_ref)$grobs[[which(sapply(ggplotGrob(legend_ref)$grobs, `[[`, "name") == "guide-box")]]
 
 layout <- main_row / patchwork::wrap_elements(full = legend_grob) +
