@@ -21,6 +21,13 @@ Fig1_Driver_mutation/*/
 Fig2_Mutation_burden/*/
 !Fig2_Mutation_burden/Fig2_boxplots_files/
 !Fig2_Mutation_burden/Fig2_dotplots_files/
+# stale knitted image no longer produced by Fig2_dotplots.Rmd
+Fig2_Mutation_burden/Fig2_dotplots_files/figure-html/telomere-dotplot-1.png
+
+# Fig3_Signature_analysis: ignore all subfolders except the knitted output folders
+Fig3_Signature_analysis/*/
+!Fig3_Signature_analysis/Fig3a_signatures_files/
+!Fig3_Signature_analysis/Fig3bc_disease_effect_files/
 
 # backup copies and knit logs
 *.bak*

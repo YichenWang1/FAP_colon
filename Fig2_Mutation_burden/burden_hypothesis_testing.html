@@ -671,9 +671,8 @@ invisible(capture.output({
 <h2>Results table</h2>
 <pre class="r"><code>out_csv &lt;- file.path(OUT_DIR, &quot;burden_and_structural_results.csv&quot;)
 write.csv(results, out_csv, row.names = FALSE)
-cat(&quot;Wrote&quot;, out_csv, &quot;\n&quot;)</code></pre>
-<pre><code>## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/burden_and_structural_results.csv</code></pre>
-<pre class="r"><code># The counts the Results paragraph on normal crypts quotes. Printed here rather
+
+# The counts the Results paragraph on normal crypts quotes. Printed here rather
 # than in the models chunk, whose output is swallowed by capture.output().
 nrm &lt;- database[database$type == &quot;normal&quot;, ]
 cat(sprintf(&quot;normal crypts: n = %d | RT events = %d | CNV events = %d | SV events = %d\n&quot;,

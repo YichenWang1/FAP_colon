@@ -298,14 +298,7 @@ layout <- main_row / patchwork::wrap_elements(full = legend_grob) +
 
 out_pdf <- file.path(OUT_DIR, "combined_oncoplot.pdf")
 ggsave(out_pdf, layout, width = fig_width, height = fig_height, limitsize = FALSE)
-cat("Wrote", out_pdf, "\n")
-```
 
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig1_Driver_mutation/combined_oncoplot.pdf
-```
-
-``` r
 layout
 ```
 

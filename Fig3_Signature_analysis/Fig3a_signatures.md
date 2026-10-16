@@ -1,0 +1,487 @@
+---
+title: "Fig3a - signature exposure bars and EF8 - siganture age-effect dotplots"
+author: "Yichen Wang"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+## Setup
+
+
+``` r
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(RColorBrewer)
+  library(ggpubr)
+  library(tidyverse)
+  library(ggtext)
+})
+```
+
+
+``` r
+ROOT <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo"
+
+OUT_DIR <- file.path(ROOT, "Fig3_Signature_analysis")
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+FAP_CSV  <- file.path(ROOT, "data/fap_database_withexposure.csv")
+CTRL_CSV <- file.path(ROOT, "data/ctrl_database_withexposure.csv")
+
+# Polyps are left out of the exposure bars (Fig 3a covers normal crypts up to
+# microadenomas); the age panels also leave out trapped crypts.
+BAR_EXCLUDED_TYPES <- c("diminutive_polyp", "large_polyp")
+DOT_EXCLUDED_TYPES <- c("diminutive_polyp", "large_polyp", "trapped_crypt")
+ADENOMA_TYPES      <- c("microadenoma", "diminutive_polyp", "large_polyp")
+
+# Signature exposure columns in the databases
+SBS_SIGS <- c("SBS1","SBS5","SBS18","SBS88","SBS89","SBS112","SBS17b","SBS93")
+ID_SIGS  <- c("ID1","ID2","ID5","ID18","ID14","IDA","IDB")
+
+# Exposures below this share of a crypt's own total are pooled into one grey bar
+LOW_EXPOSURE_FRAC  <- 0.05
+LOW_EXPOSURE_LABEL <- "Less than 5%"
+
+# Nature style: figures span the full two-column width (180 mm) and every font
+# sits in the 5-7 pt print range.
+FIG_SIG_W <- 180 / 25.4   # exposure bar figures
+FIG_SIG_H <- 3.6
+FIG_DOT_W <- 180 / 25.4   # SBS/ID age-effect panels
+FIG_DOT_H <- 3.2
+
+FS_AXIS_TITLE <- 7
+FS_AXIS_TEXT  <- 6
+FS_LEGEND     <- 6
+FS_LEGEND_TIT <- 7
+FS_BAR        <- 5        # exposure bar charts are dense; smallest allowed size
+FS_PANEL_TIT  <- 7        # the FAP / Control headers
+FS_TAG        <- 5        # N / RC / BC tags over the single-crypt mut/mut bars
+PT_SIZE       <- 0.45
+JITTER_SEED   <- 42
+```
+
+## Load and classify
+
+
+``` r
+database      <- read.csv(FAP_CSV,  header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+ctrl_database <- read.csv(CTRL_CSV, header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+
+# keep only the columns both cohorts have, so the two tables can be stacked
+shared_cols <- intersect(colnames(database), colnames(ctrl_database))
+database      <- database[, shared_cols]
+ctrl_database <- ctrl_database[, shared_cols]
+
+# monocryptal and oligocryptal adenomas are analysed together as microadenomas
+database$type[database$type %in% c("monocryptal_adenoma", "oligocryptal_adenoma")] <- "microadenoma"
+
+# Stack both cohorts, keep crypts sequenced to >10x and label the cohort.
+# n_apc_hits counts germline + somatic APC hits: 0 in controls, 1 for an
+# APC mut/wt FAP crypt, 2 or more once a second (somatic) hit is present.
+add_cohort_and_apc_hits <- function(crypts) {
+  crypts <- crypts[crypts$coverage > 10, ]
+  crypts$group <- ifelse(is.na(crypts$germlinehit), "Control", "FAP")
+  crypts$n_apc_hits <- 3 - (is.na(crypts$somatic1) +
+                            is.na(crypts$somatic2) +
+                            is.na(crypts$germlinehit))
+  crypts
+}
+
+bar_data <- add_cohort_and_apc_hits(rbind(database, ctrl_database))
+bar_data <- bar_data[!bar_data$type %in% BAR_EXCLUDED_TYPES, ]
+
+# Lesion crypts with no confirmed second APC hit are dropped, matching
+# signature_hypothesis_testing.Rmd and Fig3bc_disease_effect.Rmd. Polyps are
+# already excluded from this figure.
+no_second_hit <- bar_data$n_apc_hits < 2 & bar_data$type %in% ADENOMA_TYPES
+cat("dropped, lesion crypts with no somatic APC mutation:", sum(no_second_hit), "\n")
+```
+
+```
+## dropped, lesion crypts with no somatic APC mutation: 0
+```
+
+``` r
+bar_data <- bar_data[!no_second_hit, ]
+
+# Recode type into the bar-colour categories. Every rule tests original_type,
+# because the assignments overwrite `type` as they go.
+original_type <- bar_data$type
+has_second_hit <- bar_data$n_apc_hits >= 2
+bar_data$type[!has_second_hit &
+              original_type %in% c("bc","aca","rc","microadenoma","normal","trapped_crypt")] <- "Normal and bystander, APC mut/wt"
+bar_data$type[has_second_hit & original_type == "normal"]       <- "Normal crypts, APC mut/mut"
+bar_data$type[has_second_hit & original_type == "bc"]           <- "BC, APC mut/mut"
+bar_data$type[has_second_hit & original_type == "rc"]           <- "RC, APC mut/mut"
+bar_data$type[has_second_hit & original_type == "aca"]          <- "ACA, APC mut/mut"
+bar_data$type[has_second_hit & original_type == "microadenoma"] <- "Microadenoma, APC mut/mut"
+
+# APC-wt crypts stay grey; the APC mut/mut classes follow the warm ladder
+crypt_type_cols <- c("Normal and bystander, APC mut/wt" = "grey",
+                     "Normal crypts, APC mut/mut"       = "#faea89",
+                     "RC, APC mut/mut"                  = "#fec07d",
+                     "BC, APC mut/mut"                  = "#f09080",
+                     "ACA, APC mut/mut"                 = "#dd7601",
+                     "Microadenoma, APC mut/mut"        = "#bb0414")
+# Order the categories as the colour key lists them; any unexpected category
+# goes last rather than becoming NA.
+bar_data$type <- factor(
+  bar_data$type,
+  levels = c(names(crypt_type_cols), setdiff(unique(bar_data$type), names(crypt_type_cols))))
+crypt_type_labels <- c(
+  "Normal and bystander, <i>APC</i><sup>mut/wt</sup>",
+  "Normal crypts, <i>APC</i><sup>mut/mut</sup>",
+  "RC, <i>APC</i><sup>mut/mut</sup>",
+  "BC, <i>APC</i><sup>mut/mut</sup>",
+  "ACA, <i>APC</i><sup>mut/mut</sup>",
+  "Microadenoma, <i>APC</i><sup>mut/mut</sup>")
+names(crypt_type_labels) <- names(crypt_type_cols)
+
+crypt_type_tags <- c("Normal crypts, APC mut/mut" = "N",
+                     "RC, APC mut/mut"            = "RC",
+                     "BC, APC mut/mut"            = "BC")
+```
+
+## Signature proportions
+
+
+``` r
+set3_palette <- colorRampPalette(brewer.pal(9, "Set3"))
+
+# x order within each patient: crypts grouped by lesion (group_id), lesions in
+# ascending order of their median burden, crypts ascending burden within a lesion.
+# The order is computed on the SBS burden and reused for the indel panels, so
+# a given crypt sits at the same x position in both.
+order_samples <- function(crypts, burden_col) {
+  lesion_median <- ave(crypts[[burden_col]], crypts$patient, crypts$group_id,
+                       FUN = function(x) median(x, na.rm = TRUE))
+  ordering <- order(crypts$patient, lesion_median, crypts$group_id, crypts[[burden_col]])
+  factor(crypts$sample, levels = crypts$sample[ordering])
+}
+
+# Signature colours. SBS2/SBS13 keep their slots so colours stay stable if
+# they are ever extracted.
+sbs_sig_cols <- c(set3_palette(9)[1:8], "magenta", "firebrick")
+names(sbs_sig_cols) <- c("SBS1","SBS5","SBS18","SBS2","SBS13",
+                         "SBS88","SBS89","SBS112","SBS17b","SBS93")
+id_sig_cols <- c("#DDDCC7", "#FAEBEA", "#A6ADBA", "#F5B46F", "#DC978D", "#533A4D", "#6993A4")
+names(id_sig_cols) <- ID_SIGS
+
+sbs_sig_cols <- c(sbs_sig_cols, setNames("grey70", LOW_EXPOSURE_LABEL))
+id_sig_cols  <- c(id_sig_cols,  setNames("grey70", LOW_EXPOSURE_LABEL))
+
+# Long table of each crypt's signature proportions: one row per crypt x
+# signature, with `signature` (fill) and `proportion` (bar height).
+# Patients are ordered by age.
+signature_proportions <- function(sigs, burden_col, sample_levels = NULL) {
+  props <- bar_data[, c("sample","patient","age","type","group_id",burden_col,"group", sigs)]
+  props[, sigs] <- props[, sigs] / bar_data[[burden_col]]
+  props <- props[order(props$age), ]
+  props$patient <- factor(props$patient, levels = unique(props$patient))
+  props$sample <- if (is.null(sample_levels)) order_samples(props, burden_col)
+                  else factor(props$sample, levels = sample_levels)
+  gather(props, signature, proportion,
+         -sample, -patient, -group, -age, -all_of(burden_col), -type, -group_id)
+}
+
+sbs_props <- signature_proportions(SBS_SIGS, "sbstotal_corr")
+sbs_props$signature <- as.character(sbs_props$signature)
+sbs_props$signature[!is.na(sbs_props$proportion) &
+                    sbs_props$proportion < LOW_EXPOSURE_FRAC] <- LOW_EXPOSURE_LABEL
+sbs_props$signature <- factor(sbs_props$signature, levels = c(SBS_SIGS, LOW_EXPOSURE_LABEL))
+
+# the indel panels reuse the SBS x order, so every indel crypt must be in it
+missing_samples <- setdiff(bar_data$sample, levels(sbs_props$sample))
+if (length(missing_samples) > 0) {
+  stop("indel samples absent from the SBS order: ", paste(missing_samples, collapse = ", "))
+}
+id_props <- signature_proportions(ID_SIGS, "indeltotal_corr",
+                                  sample_levels = levels(sbs_props$sample))
+id_props$proportion[is.na(id_props$proportion)] <- 0
+id_props$signature <- as.character(id_props$signature)
+id_props$signature[id_props$proportion < LOW_EXPOSURE_FRAC] <- LOW_EXPOSURE_LABEL
+id_props$signature <- factor(id_props$signature, levels = c(ID_SIGS, LOW_EXPOSURE_LABEL))
+```
+
+## Exposure bar charts
+
+
+``` r
+# Crypt-type colour key, drawn once under each figure. get_legend() opens a
+# graphics device, so draw it into a throwaway PDF rather than the knitr device.
+crypt_type_legend <- local({
+  tmp_pdf <- tempfile(fileext = ".pdf")
+  pdf(tmp_pdf, width = FIG_SIG_W, height = FIG_SIG_H)
+  on.exit({ dev.off(); unlink(tmp_pdf) }, add = TRUE)
+  get_legend(
+    ggplot(bar_data[bar_data$type %in% names(crypt_type_cols), ], aes(x = 1, y = 1, fill = type)) +
+      geom_bar(stat = "identity") +
+      scale_fill_manual(values = crypt_type_cols, labels = crypt_type_labels,
+                        name = "Crypt type", drop = TRUE) +
+      guides(fill = guide_legend(nrow = 1)) +
+      theme(text = element_text(size = FS_BAR),
+            legend.position = "bottom",
+            legend.text = ggtext::element_markdown(size = FS_LEGEND,
+                                       margin = margin(l = 1, r = 4, unit = "pt")),
+            legend.title = element_text(size = FS_LEGEND_TIT),
+            # the label is two lines tall, so the key box would stretch to match;
+            # set height explicitly to keep the swatch a small square
+            legend.key.height = unit(1.6, "mm"),
+            legend.key.width  = unit(1.6, "mm"))
+  )
+})
+
+bar_theme <- function() {
+  theme_bw() +
+    theme(text = element_text(size = FS_BAR),
+          axis.title = element_text(size = FS_AXIS_TITLE),
+          axis.text.y = element_text(size = FS_AXIS_TEXT),
+          legend.text = element_text(size = FS_LEGEND),
+          legend.title = element_text(size = FS_LEGEND_TIT),
+          legend.key.size = unit(2.2, "mm"),
+          axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          panel.grid = element_blank(), panel.border = element_blank(),
+          strip.text = element_blank(),
+          panel.spacing.x = unit(0.2, "lines"), plot.margin = margin(0,0,0,0,"cm"))
+}
+
+# Stacked signature proportions per crypt, one facet per patient.
+make_proportion_plot <- function(props, cohort, sig_cols, xlab, fill_title, legend = FALSE) {
+  ggplot(props[props$group == cohort, ], aes(x = sample, y = proportion, fill = signature)) +
+    geom_bar(stat = "identity", show.legend = legend) +
+    scale_fill_manual(values = sig_cols) + bar_theme() +
+    theme(axis.title.x = element_text(vjust = 5)) +
+    labs(x = xlab, y = "Proportion", fill = fill_title) +
+    guides(fill = guide_legend(keyheight = unit(1.8, "mm"),
+                               keywidth  = unit(1.8, "mm"))) +
+    facet_grid(cols = vars(patient), scales = "free_x", space = "free")
+}
+
+# For each patient x tagged crypt type, one row placed over the middle bar of
+# that run, so the three neighbouring BC bars share a single label.
+tag_positions <- function(bars, all_props, burden_col) {
+  bars <- bars[bars$type %in% names(crypt_type_tags), ]
+  if (!nrow(bars)) return(cbind(bars, tag = character(0)))
+  # x-axis order: factor levels, or sorted values as ggplot uses
+  x_levels <- if (is.factor(all_props$sample)) levels(all_props$sample) else sort(unique(all_props$sample))
+  bars$x_pos <- match(as.character(bars$sample), x_levels)
+  runs <- split(bars, list(bars$patient, bars$type), drop = TRUE)
+  do.call(rbind, lapply(runs, function(run) {
+    run <- run[order(run$x_pos), ]
+    middle <- run[ceiling(nrow(run) / 2), ]
+    middle[[burden_col]] <- max(run[[burden_col]])
+    middle$tag <- crypt_type_tags[as.character(middle$type)]
+    middle
+  }))
+}
+
+# Total burden per crypt, coloured by crypt type, above the proportion bars.
+make_burden_plot <- function(props, cohort, burden_col, xlab) {
+  ggplot(props[props$group == cohort, ], aes(x = sample, y = .data[[burden_col]], fill = type)) +
+    geom_bar(stat = "identity", position = position_dodge(0.99),
+             show.legend = FALSE) +
+    geom_text(data = function(bars) tag_positions(bars, props, burden_col),
+              aes(label = tag), vjust = -0.3, size = FS_TAG / .pt) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
+    coord_cartesian(clip = "off") +
+    scale_fill_manual(values = crypt_type_cols) + bar_theme() +
+    theme(axis.title.x = element_blank()) +
+    labs(x = xlab, y = "Burden") +
+    facet_grid(cols = vars(patient), scales = "free_x", space = "free")
+}
+
+panel_title <- function(txt) text_grob(txt, color = "black", face = "bold", size = FS_PANEL_TIT)
+
+# One cohort's figure: SBS burden + proportions, indel burden + proportions,
+# and the crypt-type key underneath.
+make_cohort_figure <- function(cohort) {
+  sbs <- ggarrange(make_burden_plot(sbs_props, cohort, "sbstotal_corr", "Substitutions"),
+                   make_proportion_plot(sbs_props, cohort, sbs_sig_cols,
+                                        "Patients", "SBS signatures", legend = TRUE),
+                   ncol = 1, nrow = 2, heights = c(1,3),
+                   common.legend = TRUE, legend = "right", align = "v")
+  id  <- ggarrange(make_burden_plot(id_props, cohort, "indeltotal_corr", "Indels"),
+                   make_proportion_plot(id_props, cohort, id_sig_cols,
+                                        "Patients", "Indel signatures", legend = TRUE),
+                   ncol = 1, nrow = 2, heights = c(1,3),
+                   common.legend = TRUE, legend = "right", align = "v")
+  sbs <- annotate_figure(sbs, top = panel_title(paste("SBS signatures in", cohort)))
+  id  <- annotate_figure(id,  top = panel_title(paste("Indel signatures in", cohort)))
+  stacked <- ggarrange(sbs, id, ncol = 1, nrow = 2, align = "v")
+  ggarrange(stacked, crypt_type_legend, ncol = 1, nrow = 2, heights = c(12, 1.6))
+}
+```
+
+
+``` r
+cohort_figures <- list(FAP = make_cohort_figure("FAP"),
+                       Control = make_cohort_figure("Control"))
+
+for (cohort in names(cohort_figures)) {
+  out_pdf <- file.path(OUT_DIR, paste0(cohort, "_sigs.pdf"))
+  pdf(out_pdf, width = FIG_SIG_W, height = FIG_SIG_H)
+  print(cohort_figures[[cohort]])
+  invisible(dev.off())
+}
+
+cohort_figures$FAP
+```
+
+![](Fig3a_signatures_files/figure-html/exposure-bars-1.png)<!-- -->
+
+``` r
+cohort_figures$Control
+```
+
+![](Fig3a_signatures_files/figure-html/exposure-bars-2.png)<!-- -->
+
+## SBS1 / SBS5 / SBS18 versus age
+
+``` r
+# Ordered by APC status: the three mut/mut groups, then wt/mut, mut/wt, wt/wt.
+dot_category_levels <- c(
+  "Microadenomas, FAP, APC mut/mut",
+  "ACA, FAP, APC mut/mut",
+  "Normal/RC/BC, FAP, APC mut/mut",
+  "RC/BC/ACA, FAP, APC wt/mut",
+  "Normal crypts, FAP, APC mut/wt",
+  "Normal crypts, Control, APC wt/wt"
+)
+
+dot_category_cols <- c("#bb0414", "#dd7601", "#fec07d", "#835198", "#70A3C4", "#C7E5EC")
+names(dot_category_cols) <- dot_category_levels
+
+dot_category_labels <- c(
+  "Microadenomas, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "ACA, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "Normal/RC/BC, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "RC/BC/ACA, FAP,<br><i>APC</i><sup>wt/mut</sup>",
+  "Normal, FAP,<br><i>APC</i><sup>mut/wt</sup>",
+  "Normal crypts, Control,<br><i>APC</i><sup>wt/wt</sup>"
+)
+names(dot_category_labels) <- dot_category_levels
+
+make_dot_plot <- function(crypts, yvar, ylab) {
+  ggplot(data = crypts, mapping = aes(x = age, y = .data[[yvar]])) +
+    geom_point(aes(colour = type), alpha = 0.6, size = PT_SIZE,
+               position = position_jitter(width = 0.3, height = 0, seed = JITTER_SEED)) +
+    scale_color_manual(name = "Group", values = dot_category_cols,
+                       labels = dot_category_labels, drop = TRUE) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), panel.border = element_blank(),
+          axis.line = element_line(linewidth = 0.5, colour = "black")) +
+    labs(y = ylab, x = "Age (yrs)") +
+    guides(colour = guide_legend(override.aes = list(size = 1.9))) +
+    theme(axis.title = element_text(size = FS_AXIS_TITLE),
+          axis.text.y = element_text(size = FS_AXIS_TEXT, color = "black"),
+          axis.text.x = element_text(size = FS_AXIS_TEXT, color = "black"),
+          legend.text = ggtext::element_markdown(size = FS_LEGEND,
+                                                 margin = margin(l = 1, unit = "pt")),
+          legend.title = element_text(size = FS_LEGEND_TIT),
+          legend.key.size = unit(2.2, "mm"),
+          legend.key.spacing.y = unit(0.5, "mm"))
+}
+
+dot_data <- add_cohort_and_apc_hits(rbind(database, ctrl_database))
+dot_data <- dot_data[!dot_data$type %in% DOT_EXCLUDED_TYPES, ]
+
+# Lesion crypts with no confirmed second APC hit are dropped (before the
+# categories are assigned, so the two stay row-aligned)
+no_second_hit <- dot_data$n_apc_hits < 2 & dot_data$type %in% ADENOMA_TYPES
+cat("dropped, lesion crypts with no somatic APC mutation:", sum(no_second_hit), "\n")
+```
+
+```
+## dropped, lesion crypts with no somatic APC mutation: 0
+```
+
+``` r
+dot_data <- dot_data[!no_second_hit, ]
+
+crypt_type     <- dot_data$type
+has_second_hit <- dot_data$n_apc_hits > 1
+is_fap         <- dot_data$group == "FAP"
+dot_category <- rep(NA_character_, nrow(dot_data))
+dot_category[dot_data$group == "Control"]                                      <- "Normal crypts, Control, APC wt/wt"
+dot_category[is_fap & crypt_type == "microadenoma"          &  has_second_hit] <- "Microadenomas, FAP, APC mut/mut"
+dot_category[is_fap & crypt_type == "aca"                   &  has_second_hit] <- "ACA, FAP, APC mut/mut"
+dot_category[is_fap & crypt_type %in% c("normal","rc","bc") &  has_second_hit] <- "Normal/RC/BC, FAP, APC mut/mut"
+dot_category[is_fap & crypt_type %in% c("rc","bc","aca")    & !has_second_hit] <- "RC/BC/ACA, FAP, APC wt/mut"
+dot_category[is_fap & crypt_type == "normal"                & !has_second_hit] <- "Normal crypts, FAP, APC mut/wt"
+
+if (any(is.na(dot_category))) {
+  stop("unclassified crypts would plot as an unlabelled NA group: ",
+       paste(unique(paste(crypt_type[is.na(dot_category)],
+                          dot_data$n_apc_hits[is.na(dot_category)])), collapse = ", "))
+}
+dot_data$type <- factor(dot_category, levels = dot_category_levels)
+stopifnot(!any(is.na(dot_data$type)))
+
+# Draw the most advanced lesions on top: geom_jitter draws in row order, so
+# sort by descending factor level and level 1 lands last.
+dot_data <- dot_data[order(-as.integer(dot_data$type)), ]
+
+# Control crypts are excluded from these panels.
+dot_data <- droplevels(dot_data[dot_data$type != "Normal crypts, Control, APC wt/wt", ])
+
+cat("n crypts per group (age-effect panels):\n")
+```
+
+```
+## n crypts per group (age-effect panels):
+```
+
+``` r
+print(table(dot_data$type))
+```
+
+```
+## 
+## Microadenomas, FAP, APC mut/mut           ACA, FAP, APC mut/mut 
+##                              30                              38 
+##  Normal/RC/BC, FAP, APC mut/mut      RC/BC/ACA, FAP, APC wt/mut 
+##                               5                              98 
+##  Normal crypts, FAP, APC mut/wt 
+##                             191
+```
+
+
+``` r
+sbs_plot <- ggarrange(make_dot_plot(dot_data, "SBS1",  "SBS1 / crypt"),
+                      make_dot_plot(dot_data, "SBS5",  "SBS5 / crypt"),
+                      make_dot_plot(dot_data, "SBS18", "SBS18 / crypt"),
+                      ncol = 3, nrow = 1, common.legend = TRUE,
+                      legend = "bottom", align = "v")
+
+out_pdf <- file.path(OUT_DIR, "sbs_age_dotplot.pdf")
+pdf(out_pdf, width = FIG_DOT_W, height = FIG_DOT_H)
+print(sbs_plot)
+invisible(dev.off())
+
+sbs_plot
+```
+
+![](Fig3a_signatures_files/figure-html/sbs-dotplot-1.png)<!-- -->
+
+## ID1 / ID2 / ID5 versus age
+
+``` r
+id_plot <- ggarrange(make_dot_plot(dot_data, "ID1", "ID1 / crypt"),
+                     make_dot_plot(dot_data, "ID2", "ID2 / crypt"),
+                     make_dot_plot(dot_data, "ID5", "ID5 / crypt"),
+                     ncol = 3, nrow = 1, common.legend = TRUE,
+                     legend = "bottom", align = "v")
+
+out_pdf <- file.path(OUT_DIR, "id_age_dotplot.pdf")
+pdf(out_pdf, width = FIG_DOT_W, height = FIG_DOT_H)
+print(id_plot)
+invisible(dev.off())
+
+id_plot
+```
+
+![](Fig3a_signatures_files/figure-html/id-dotplot-1.png)<!-- -->

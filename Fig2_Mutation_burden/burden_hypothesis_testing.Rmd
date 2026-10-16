@@ -330,7 +330,6 @@ invisible(capture.output({
 ```{r write-results}
 out_csv <- file.path(OUT_DIR, "burden_and_structural_results.csv")
 write.csv(results, out_csv, row.names = FALSE)
-cat("Wrote", out_csv, "\n")
 
 # The counts the Results paragraph on normal crypts quotes. Printed here rather
 # than in the models chunk, whose output is swallowed by capture.output().

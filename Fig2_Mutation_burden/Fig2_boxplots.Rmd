@@ -369,15 +369,15 @@ cat("n crypts per patient x plot_type (all variables combined):\n")
 print(table(df$patient, df$plot_type))
 ```
 
-## Write the PDFs
+## Plots
 
-```{r write-pdfs, fig.width=FIG_W, fig.height=FIG_H}
+```{r write-pdfs, include=FALSE}
+# Writes the per-variable PDFs; not shown in the knitted document.
 for (nm in names(plots)) {
   out_path <- file.path(OUT_DIR, paste0(nm, "_boxplot_by_patient.pdf"))
   pdf(out_path, width = FIG_W, height = FIG_H)
   print(plots[[nm]])
   invisible(dev.off())
-  cat("Wrote", out_path, "\n")
 }
 ```
 
@@ -388,10 +388,10 @@ for (nm in names(plots)) {
 }
 ```
 
-## Supplementary figure: telomere content and retrotransposition
-
-```{r supp-telomere-rt, fig.width=SUPP_W, fig.height=SUPP_H}
-# The two panels are the ones written above, stacked and labelled a, b.
+```{r supp-telomere-rt, include=FALSE}
+# Supplementary figure (telomere content and retrotransposition): the two
+# panels written above, stacked and labelled a, b. Written to SUPP_DIR only,
+# not shown in the knitted document.
 supp_panel <- ggarrange(plots[["Telomere"]], plots[["RT"]],
                         ncol = 1, nrow = 2, align = "v",
                         labels = c("a", "b"),
@@ -401,7 +401,4 @@ supp_out <- file.path(SUPP_DIR, "SuppFig_telomere_RT_boxplot.pdf")
 pdf(supp_out, width = SUPP_W, height = SUPP_H)
 print(supp_panel)
 invisible(dev.off())
-cat("Wrote", supp_out, sprintf("(%.0f x %.0f mm)\n", SUPP_W * 25.4, SUPP_H * 25.4))
-
-supp_panel
 ```

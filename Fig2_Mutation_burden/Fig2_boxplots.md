@@ -426,42 +426,9 @@ print(table(df$patient, df$plot_type))
 ##   PD45542                39            0
 ```
 
-## Write the PDFs
+## Plots
 
 
-``` r
-for (nm in names(plots)) {
-  out_path <- file.path(OUT_DIR, paste0(nm, "_boxplot_by_patient.pdf"))
-  pdf(out_path, width = FIG_W, height = FIG_H)
-  print(plots[[nm]])
-  invisible(dev.off())
-  cat("Wrote", out_path, "\n")
-}
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/SBS_boxplot_by_patient.pdf
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/Indel_boxplot_by_patient.pdf
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/Telomere_boxplot_by_patient.pdf
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/CNV_boxplot_by_patient.pdf
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/SV_boxplot_by_patient.pdf
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/RT_boxplot_by_patient.pdf
-```
 
 
 ``` r
@@ -497,29 +464,4 @@ for (nm in names(plots)) {
 
 ![](Fig2_boxplots_files/figure-html/show-plots-6.png)<!-- -->
 
-## Supplementary figure: telomere content and retrotransposition
 
-
-``` r
-# The two panels are the ones written above, stacked and labelled a, b.
-supp_panel <- ggarrange(plots[["Telomere"]], plots[["RT"]],
-                        ncol = 1, nrow = 2, align = "v",
-                        labels = c("a", "b"),
-                        font.label = list(size = 8, face = "bold"))
-
-supp_out <- file.path(SUPP_DIR, "SuppFig_telomere_RT_boxplot.pdf")
-pdf(supp_out, width = SUPP_W, height = SUPP_H)
-print(supp_panel)
-invisible(dev.off())
-cat("Wrote", supp_out, sprintf("(%.0f x %.0f mm)\n", SUPP_W * 25.4, SUPP_H * 25.4))
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/supp_figures/SuppFig_telomere_RT_boxplot.pdf (180 x 152 mm)
-```
-
-``` r
-supp_panel
-```
-
-![](Fig2_boxplots_files/figure-html/supp-telomere-rt-1.png)<!-- -->

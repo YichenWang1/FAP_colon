@@ -333,14 +333,7 @@ invisible(capture.output({
 ``` r
 out_csv <- file.path(OUT_DIR, "burden_and_structural_results.csv")
 write.csv(results, out_csv, row.names = FALSE)
-cat("Wrote", out_csv, "\n")
-```
 
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/burden_and_structural_results.csv
-```
-
-``` r
 # The counts the Results paragraph on normal crypts quotes. Printed here rather
 # than in the models chunk, whose output is swallowed by capture.output().
 nrm <- database[database$type == "normal", ]

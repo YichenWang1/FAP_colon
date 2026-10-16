@@ -194,19 +194,9 @@ indel_dot_plot <- make_dot_plot("indeltotal_corr", "Indels / crypt")
 dot_plot <- ggarrange(sbs_dot_plot, indel_dot_plot, ncol = 2, nrow = 1,
                       common.legend = TRUE, legend = "right", align = "v")
 
-out_pdf <- file.path(OUT_DIR, "burden_vs_age_dotplot.pdf")
-pdf(out_pdf, width = BURDEN_W, height = BURDEN_H)
-print(dot_plot)
-invisible(dev.off())
-cat("Wrote", out_pdf, "\n")
-```
-
-```
-## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/burden_vs_age_dotplot.pdf
-```
-
-``` r
 dot_plot
 ```
 
 ![](Fig2_dotplots_files/figure-html/burden-dotplot-1.png)<!-- -->
+
+
