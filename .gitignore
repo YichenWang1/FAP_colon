@@ -17,6 +17,11 @@ Fig1_Driver_mutation/*/
 !Fig1_Driver_mutation/oncoplots_files/
 !Fig1_Driver_mutation/individual_apc_driver_lollipops_files/
 
+# Fig2_Mutation_burden: ignore all subfolders except the knitted output folders
+Fig2_Mutation_burden/*/
+!Fig2_Mutation_burden/Fig2_boxplots_files/
+!Fig2_Mutation_burden/Fig2_dotplots_files/
+
 # backup copies and knit logs
 *.bak*
 *.log

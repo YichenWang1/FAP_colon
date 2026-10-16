@@ -1,0 +1,212 @@
+---
+title: "Age-vs-burden dot plots (SBS, indel)"
+author: "Yichen Wang"
+output:
+  html_document:
+    keep_md: yes
+---
+
+
+
+## Setup
+
+
+``` r
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(ggpubr)
+  library(ggtext)
+})
+```
+
+
+``` r
+ROOT    <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo"
+OUT_DIR <- file.path(ROOT, "Fig2_Mutation_burden")
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+fap_file  <- file.path(ROOT, "data/fap_database_withexposure.csv")
+ctrl_file <- file.path(ROOT, "data/ctrl_database_withexposure.csv")
+
+# Excluded from this figure: macroscopic lesions (polyps) and trapped crypts
+# inside polyps. 
+LESION_TYPES <- c("diminutive_polyp", "large_polyp", "trapped_crypt")
+
+# Ordered by APC status: the three mut/mut groups, then wt/mut, mut/wt, wt/wt.
+dot_type_levels <- c(
+  "Microadenomas, FAP, APC mut/mut",
+  "ACA, FAP, APC mut/mut",
+  "Normal/RC/BC, FAP, APC mut/mut",
+  "RC/BC/ACA, FAP, APC wt/mut",
+  "Normal crypts, FAP, APC mut/wt",
+  "Normal crypts, Control, APC wt/wt"
+)
+
+dot_cols <- c("#FC360A", "#E97E0C", "#F5B46F", "#835198", "#70A3C4", "#C7E5EC")
+names(dot_cols) <- dot_type_levels
+
+labels_html <- c(
+  "Microadenomas, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "ACA, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "Normal/RC/BC, FAP,<br><i>APC</i><sup>mut/mut</sup>",
+  "RC/BC/ACA, FAP,<br><i>APC</i><sup>wt/mut</sup>",
+  "Normal crypts, FAP,<br><i>APC</i><sup>mut/wt</sup>",
+  "Normal crypts, Control,<br><i>APC</i><sup>wt/wt</sup>"
+)
+names(labels_html) <- dot_type_levels
+
+# Nature sizing: two panels side by side occupy the full double-column width
+# (180 mm). Fonts are absolute points and must sit in the 5-7 pt print range.
+BURDEN_W <- 180 / 25.4
+BURDEN_H <- 3.0
+
+FS_AXIS_TITLE <- 7
+FS_AXIS_TEXT  <- 6
+FS_LEGEND     <- 6
+FS_LEGEND_TIT <- 7
+PT_SIZE       <- 0.45   # jitter point size, scaled down with the figure
+# ggplot resolves jitter when a plot is DRAWN, not when it is built, so an
+# unseeded geom_jitter scatters the points afresh on every print() and the
+# figure cannot be reproduced run to run. Seeding the position fixes every
+# draw of the layer, wherever it is drawn.
+JITTER_SEED   <- 42
+```
+
+## Build the dot-plot dataset
+
+
+``` r
+database      <- read.csv(fap_file,  header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+ctrl_database <- read.csv(ctrl_file, header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+
+database$type[database$type %in% c("monocryptal_adenoma", "oligocryptal_adenoma")] <- "microadenoma"
+# trapped_in_polyp exists only in the FAP table (no trapped crypts in controls),
+# so drop trapped crypts here, before the shared-column intersect removes it.
+database <- database[is.na(database$trapped_in_polyp), ]
+
+shared_cols   <- intersect(colnames(database), colnames(ctrl_database))
+database      <- database[, shared_cols]
+ctrl_database <- ctrl_database[, shared_cols]
+
+full_dataset <- rbind(database, ctrl_database)
+full_dataset <- full_dataset[full_dataset$coverage > 10, ]
+full_dataset$group <- "Control"
+full_dataset$group[!is.na(full_dataset$germlinehit)] <- "FAP"
+full_dataset <- full_dataset[!full_dataset$type %in% LESION_TYPES, ]
+stopifnot(nrow(full_dataset) > 0)
+full_dataset$num_APC <- 3 - (is.na(full_dataset$somatic1) +
+                             is.na(full_dataset$somatic2) +
+                             is.na(full_dataset$germlinehit))
+```
+
+
+``` r
+# Disjoint category rules, assigned in one pass so no row can be silently
+# overwritten by a later rule.
+df <- full_dataset
+n_apc <- df$num_APC
+ty    <- df$type
+
+cat_new <- rep(NA_character_, nrow(df))
+cat_new[df$group == "Control"]                                <- "Normal crypts, Control, APC wt/wt"
+is_fap <- df$group == "FAP"
+cat_new[is_fap & ty == "microadenoma"          & n_apc >  1]   <- "Microadenomas, FAP, APC mut/mut"
+cat_new[is_fap & ty == "aca"                   & n_apc >  1]   <- "ACA, FAP, APC mut/mut"
+cat_new[is_fap & ty %in% c("normal","rc","bc") & n_apc >  1]   <- "Normal/RC/BC, FAP, APC mut/mut"
+cat_new[is_fap & ty %in% c("rc","bc","aca")    & n_apc <= 1]   <- "RC/BC/ACA, FAP, APC wt/mut"
+cat_new[is_fap & ty == "normal"                & n_apc <= 1]   <- "Normal crypts, FAP, APC mut/wt"
+
+if (any(is.na(cat_new))) {
+  stop("unclassified crypts would plot as an unlabelled NA group: ",
+       paste(unique(paste(ty[is.na(cat_new)], n_apc[is.na(cat_new)])), collapse = ", "))
+}
+missing_levels <- setdiff(unique(cat_new), dot_type_levels)
+if (length(missing_levels) > 0) {
+  stop("category strings absent from dot_type_levels (would plot as grey NA): ",
+       paste(missing_levels, collapse = " | "))
+}
+df$type <- factor(cat_new, levels = dot_type_levels)
+stopifnot(!any(is.na(df$type)))
+
+# Only the two normal-crypt groups are shown. 
+KEEP_GROUPS <- c("Normal crypts, FAP, APC mut/wt", "Normal crypts, Control, APC wt/wt")
+df <- droplevels(df[df$type %in% KEEP_GROUPS, ])
+
+# Draw the most advanced lesions on top: geom_jitter draws in row order, so
+# sort by descending factor level and level 1 lands last.
+df <- df[order(-as.integer(df$type)), ]
+```
+
+
+``` r
+cat("n crypts per group (age-effect dot plot subset):\n")
+```
+
+```
+## n crypts per group (age-effect dot plot subset):
+```
+
+``` r
+print(table(df$type))
+```
+
+```
+## 
+##    Normal crypts, FAP, APC mut/wt Normal crypts, Control, APC wt/wt 
+##                               191                               400
+```
+
+## Plot helper
+
+
+``` r
+make_dot_plot <- function(yvar, ylab) {
+  ggplot(data = df, mapping = aes(x = age, y = .data[[yvar]])) +
+    geom_point(aes(colour = type), alpha = 1, size = PT_SIZE,
+               position = position_jitter(width = 0.3, height = 0, seed = JITTER_SEED)) +
+    scale_color_manual(name = "Group", values = dot_cols, labels = labels_html, drop = TRUE) +
+    # Burdens are non-negative: anchor the axis at 0 with no lower expansion so
+    # 0 sits exactly on the axis line, keeping the usual headroom at the top.
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), panel.border = element_blank(),
+          axis.line = element_line(linewidth = 0.5, colour = "black")) +
+    labs(y = ylab, x = "Age (yrs)") +
+    guides(colour = guide_legend(override.aes = list(size = 1))) +
+    theme(axis.title = element_text(size = FS_AXIS_TITLE),
+          axis.text.y = element_text(size = FS_AXIS_TEXT, color = "black"),
+          axis.text.x = element_text(size = FS_AXIS_TEXT, color = "black"),
+          legend.text = ggtext::element_markdown(size = FS_LEGEND,
+                                                 margin = margin(l = 1, unit = "pt")),
+          legend.title = element_text(size = FS_LEGEND_TIT),
+          legend.key.size = unit(2.2, "mm"),
+          legend.key.spacing.y = unit(0.5, "mm"))
+}
+```
+
+## Burden vs age (substitutions and indels)
+
+
+``` r
+sbs_dot_plot   <- make_dot_plot("sbstotal_corr",   "Substitutions / crypt")
+indel_dot_plot <- make_dot_plot("indeltotal_corr", "Indels / crypt")
+
+dot_plot <- ggarrange(sbs_dot_plot, indel_dot_plot, ncol = 2, nrow = 1,
+                      common.legend = TRUE, legend = "right", align = "v")
+
+out_pdf <- file.path(OUT_DIR, "burden_vs_age_dotplot.pdf")
+pdf(out_pdf, width = BURDEN_W, height = BURDEN_H)
+print(dot_plot)
+invisible(dev.off())
+cat("Wrote", out_pdf, "\n")
+```
+
+```
+## Wrote /lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo/Fig2_Mutation_burden/burden_vs_age_dotplot.pdf
+```
+
+``` r
+dot_plot
+```
+
+![](Fig2_dotplots_files/figure-html/burden-dotplot-1.png)<!-- -->
