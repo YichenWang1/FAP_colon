@@ -5,7 +5,7 @@ library(sigfit)
 # --- Path configuration ---
 REPO          <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo"
 HDP_DIR       <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/HDP/snv"
-SBS_INPUT     <- file.path(REPO, "data/somatic_mutation/sbs_fap_control_perbranch.hdp.txt")
+SBS_INPUT     <- file.path(REPO, "data/somatic_mutation/sbs_fap_control_perbranch.txt")
 TREE_DIR      <- file.path(REPO, "data/phylogenetic_tree/tree_structure")
 DATABASE      <- file.path(REPO, "data/fap_database_withexposure.csv")
 FAP_PATIENTS  <- file.path(REPO, "data/phylogenetic_tree/fap_patients.txt")
