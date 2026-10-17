@@ -23,7 +23,7 @@ hdp_mut <- hdp_setdata(hdp_mut,
 hdp_activated <- dp_activate(hdp_mut, 1:numdp(hdp_mut), initcc=10, seed=iter*200)
 
 chlist <- hdp_posterior(hdp_activated,
-                        burnin=20000,
+                        burnin=40000,
 			n=100,
 			space=1000,
 			cpiter=3,
