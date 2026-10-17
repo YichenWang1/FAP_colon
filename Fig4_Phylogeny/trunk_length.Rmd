@@ -1,0 +1,221 @@
+---
+title: "trunk_length"
+author: "Yichen Wang"
+date: "2025-01-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# RUN ORDER: this Rmd, then APC_timing.Rmd. The two share one output file,
+# github_repo/data/phylogenetic_tree/APC_onset_and_trunk_length.csv: this one
+# writes it with 13 columns, and APC_timing.Rmd then reads it, recomputes
+# SBS5_random_slope_patient / SBS5_full_slope / age_onset_upperlim and writes
+# it back with 16. 
+library(ggtree)
+library(ape)
+```
+
+```{r lmm test}
+library(nlme)
+library(ape)
+
+ROOT <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon"
+database = read.csv(file.path(ROOT, "metadata/fap_database_withexposure.csv"), header = TRUE, stringsAsFactors = FALSE, na.strings = c('', 'NA'))
+rownames(database) = database$sample
+database$num_APC = 3 - (is.na(database$germlinehit) + is.na(database$somatic1) + is.na(database$somatic2))
+drivers = read.csv(file.path(ROOT, "metadata/somatic_drivers.csv"), header = TRUE, stringsAsFactors = FALSE)
+# somatic_drivers.csv now also carries FAP targeted-panel (TGS) and
+# whole-exome (WES) crypts, which have different gene coverage and sensitivity
+# and no phylogeny. This analysis is WGS-only, so drop them.
+if ("Source" %in% names(drivers)) {
+  n_before = nrow(drivers)
+  drivers = drivers[drivers$Source == "WGS", , drop = FALSE]
+  message("somatic_drivers.csv: kept ", nrow(drivers), " WGS rows, dropped ",
+          n_before - nrow(drivers), " TGS/WES rows")
+}
+PATIENTS = c("PD40734", "PD42778", "PD44720", "PD44721", "PD45542")
+
+coarse_type = function(type) {
+  if (type %in% c("diminutive_polyp", "large_polyp")) return("polyp")
+  if (type %in% c("monocryptal_adenoma", "oligocryptal_adenoma")) return("adenoma")
+  if (type == "bc") return("bc")
+  if (type == "aca") return("aca")
+  return(NA_character_)
+}
+
+lineage_trunk = function(lineage_tips, tree) {
+  node = tryCatch(getMRCA(tree, lineage_tips), error = function(e) NULL)
+  if (is.null(node) || is.na(node)) return(NULL)
+  clade_tips = extract.clade(tree, node)$tip.label
+  list(node = node, clade = clade_tips)
+}
+
+fit_path = function(patient, node) paste0(ROOT, "/HDP/snv/refit/fit_branch_", patient, "_", node, ".txt")
+
+# consecutive branches below the individual-refit threshold accumulate into
+# burden_adj until a branch that has its own refit is reached (the
+# anchor)
+climb_and_allocate = function(start_node, stop_node, tree_df, patient) {
+  tree_df$parent[tree_df$node == stop_node] = stop_node
+
+  total_adj = 0; total_sbs1 = 0; total_sbs5 = 0; unassigned = 0; any_assigned = FALSE
+  current_branch = start_node
+  parent_branch = tree_df$parent[tree_df$node == current_branch]
+  burden_adj = 0
+  while (current_branch != parent_branch) {
+    while (!file.exists(fit_path(patient, current_branch))) {
+      if (current_branch == parent_branch) break
+      v = tree_df$adj_x[tree_df$node == current_branch]
+      if (!is.na(v)) burden_adj = burden_adj + v
+      current_branch = parent_branch
+      parent_branch = tree_df$parent[tree_df$node == current_branch]
+    }
+    anchor_branch = current_branch
+    burden_adj = burden_adj + tree_df$adj_x[tree_df$node == current_branch]
+    while (!file.exists(fit_path(patient, parent_branch))) {
+      if (current_branch == parent_branch) break
+      v = tree_df$adj_x[tree_df$node == parent_branch]
+      if (!is.na(v)) burden_adj = burden_adj + v
+      current_branch = parent_branch
+      parent_branch = tree_df$parent[tree_df$node == current_branch]
+    }
+    if (file.exists(fit_path(patient, anchor_branch))) {
+      sig_df = read.table(fit_path(patient, anchor_branch))
+      total_sbs1 = total_sbs1 + sig_df["SBS1", 1] * burden_adj
+      total_sbs5 = total_sbs5 + sig_df["SBS5", 1] * burden_adj
+      any_assigned = TRUE
+    } else {
+      unassigned = unassigned + burden_adj
+    }
+    total_adj = total_adj + burden_adj
+    current_branch = parent_branch
+    parent_branch = tree_df$parent[tree_df$node == current_branch]
+    burden_adj = 0
+  }
+  # If not one single branch on the whole climb found an anchor
+  if (!any_assigned && total_adj > 0) { total_sbs1 = NA; total_sbs5 = NA }
+  list(adj = total_adj, sbs1 = total_sbs1, sbs5 = total_sbs5, unassigned = unassigned)
+}
+
+# This polyp has no APC driver, but looks like clonal expansion, so we estimate the onset of this unknown putative driver instead
+APC_OVERRIDE_GROUP  = "PD40734P_PLP_03"
+APC_OVERRIDE_CRYPTS = c("PD40734p_lo0006", "PD40734p_lo0007", "PD40734p_lo0009", "PD40734p_lo0011")
+
+rows_out = list()
+total_unassigned = 0  # aggregate burden with no fit anchor anywhere on its path (reported at the end, same convention as add_expsoure.R)
+for (patient in PATIENTS) {
+  tree = read.tree(file.path(ROOT, "LCMB_analysis/FAP/snp", patient, paste0(patient, "_snp_tree_with_branch_length.tree")))
+  tree_df = read.table(file.path(ROOT, "LCMB_analysis/FAP/snp/table", paste0(patient, "_snp_tree_adjusted.txt")), sep = '\t', header = TRUE)
+  true_root = tree_df$node[tree_df$parent == tree_df$node]
+  pat_drivers = drivers[drivers$Patient == patient, ]
+
+  pat_db = database[database$patient == patient, ]
+  pat_db$coarse = sapply(pat_db$type, coarse_type)
+  eligible = pat_db[!is.na(pat_db$coarse) & pat_db$sample %in% tree$tip.label, ]
+
+  eligible$lesion_id = ifelse(is.na(eligible$subgroup_id) |
+                                trimws(as.character(eligible$subgroup_id)) == "",
+                              as.character(eligible$group_id),
+                              as.character(eligible$subgroup_id))
+  for (grp in unique(eligible$lesion_id)) {
+    members = eligible[eligible$lesion_id == grp, ]
+    if (nrow(members) < 2) next  # need >=2 crypts to define a trunk distinct from the crypt's own full root-to-tip path
+    tips_in_grp = members$sample
+
+    # Partition the group's crypts into distinct APC-driver lineages 
+    lineages = list()
+    assigned = character(0)
+    for (crypt in tips_in_grp) {
+      if (crypt %in% assigned) next
+      # APC-lineage = crypts in this group with an identical, non-blank somatic1
+      crypt_som1 = database[crypt, "somatic1"]
+      if (is.na(crypt_som1) || crypt_som1 == "") {
+        if (grp == APC_OVERRIDE_GROUP) {
+          apc_lineage = intersect(APC_OVERRIDE_CRYPTS, tips_in_grp)
+        } else {
+          next  # no somatic APC driver for this crypt -- nothing to find
+        }
+      } else {
+        apc_lineage = tips_in_grp[sapply(tips_in_grp, function(s) {
+          s_som1 = database[s, "somatic1"]
+          !is.na(s_som1) && s_som1 == crypt_som1
+        })]
+      }
+      if (length(apc_lineage) < 2) next
+      lineages[[length(lineages) + 1]] = apc_lineage
+      assigned = union(assigned, apc_lineage)
+    }
+
+    for (apc_lineage in lineages) {
+      trunk_res = lineage_trunk(apc_lineage, tree)
+      if (is.null(trunk_res)) next
+      node = trunk_res$node
+
+      # Trunk allocation
+      trunk_sums = climb_and_allocate(node, true_root, tree_df, patient)
+      burden = trunk_sums$adj
+      SBS1_trunk = trunk_sums$sbs1
+      SBS5_trunk = trunk_sums$sbs5
+      total_unassigned = total_unassigned + trunk_sums$unassigned
+
+      # trunk_somatic_driver: count of confirmed driver events
+      trunk_somatic_driver = 0
+      if (nrow(pat_drivers) > 0) {
+        for (k in seq_len(nrow(pat_drivers))) {
+          samp_list = strsplit(pat_drivers$Sample[k], ";")[[1]]
+          if (all(trunk_res$clade %in% samp_list)) trunk_somatic_driver = trunk_somatic_driver + 1
+        }
+      }
+      # somatic_drivers.csv is a table of coordinates, so a chromosome 5 LOH or
+      # CNNLOH is absent from it entirely. Count it from fap_database instead
+      clade_loh = sapply(trunk_res$clade, function(s)
+        any(grepl("^Chr5", c(database[s, "somatic1"], database[s, "somatic2"]))))
+      if (length(clade_loh) > 0 && all(clade_loh)) {
+        trunk_somatic_driver = trunk_somatic_driver + 1
+      }
+
+      for (crypt in apc_lineage) {
+        tip_node = which(tree$tip.label == crypt)
+        # Branch allocation
+        branch_sums = climb_and_allocate(tip_node, node, tree_df, patient)
+        total_unassigned = total_unassigned + branch_sums$unassigned
+
+        rows_out[[length(rows_out) + 1]] = data.frame(
+          patient = patient,
+          age = database[crypt, "age"],
+          trunk = paste0(patient, "_", node),
+          type = members$coarse[members$sample == crypt],
+          lineage = grp,
+          crypt = crypt,
+          trunk_somatic_driver = trunk_somatic_driver,
+          SBS_total_trunk = burden,
+          SBS5_trunk = SBS5_trunk,
+          SBS1_trunk = SBS1_trunk,
+          SBS_total_branch = branch_sums$adj,
+          SBS5_branch = branch_sums$sbs5,
+          SBS1_branch = branch_sums$sbs1,
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+}
+df_trunk_length = do.call(rbind, rows_out)
+write.csv(df_trunk_length, file.path(ROOT, "github_repo/data/phylogenetic_tree/APC_onset_and_trunk_length.csv"), quote = FALSE, row.names = FALSE)
+cat("Total unassigned burden (no fit anchor found anywhere on path; folded into SBS_total_trunk/branch but not SBS1/SBS5):", total_unassigned, "\n")
+cat("Rows with fully unknown signature composition (NA):", sum(is.na(df_trunk_length$SBS1_trunk) | is.na(df_trunk_length$SBS1_branch)), "/", nrow(df_trunk_length), "\n")
+
+df_trunk_length$trunk_driver_1 = T
+df_trunk_length$trunk_driver_1[df_trunk_length$trunk_somatic_driver>1] = F
+df_trunk_length = df_trunk_length[df_trunk_length$type!='polyp' | df_trunk_length$trunk_somatic_driver>1,]
+lmm <- lme(SBS_total_branch ~ type, random = ~1|patient/lineage, data = df_trunk_length, method = "ML")
+summary(lmm)
+
+
+
+df_trunk=df_trunk_length[,c(1:5,7:10)]
+df_trunk=unique(df_trunk)
+lmm <- lme(SBS_total_trunk ~ type, random = ~1|patient, data = df_trunk, method = "ML")
+summary(lmm)
+```

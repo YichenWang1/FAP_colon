@@ -8,6 +8,12 @@ output:
 
 ```{r initialisation, include=FALSE}
 knitr::opts_chunk$set(tidy=TRUE,warning = FALSE, message = FALSE)
+# RUN ORDER: run trunk_length.Rmd FIRST, then this Rmd. Both write
+# github_repo/data/phylogenetic_tree/APC_onset_and_trunk_length.csv:
+# trunk_length.Rmd writes 13 columns, and this Rmd reads that file, drops and
+# recomputes SBS5_random_slope_patient / SBS5_full_slope / age_onset_upperlim,
+# and writes it back with 16. Running this Rmd on a file that still has the
+# three columns is safe -- they are dropped before being recomputed.
 ```
 
 
@@ -19,7 +25,12 @@ library(dplyr)
 ```
 
 ```{r read file}
-database = read.csv('../data/fap_database_withexposure.csv',header=T)
+# Paths via ROOT, as trunk_length.Rmd does: this file used one absolute path
+# and two relative ones, so it only worked when knitted from its own directory.
+ROOT <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon"
+ONSET_CSV <- file.path(ROOT, "github_repo/data/phylogenetic_tree/APC_onset_and_trunk_length.csv")
+
+database = read.csv(file.path(ROOT, "metadata/fap_database_withexposure.csv"), header=T)
 database$type = as.factor(database$type)
 database$type = relevel(database$type , ref = "normal")
 
@@ -27,10 +38,10 @@ database$type = relevel(database$type , ref = "normal")
 database$num_APC = 3-(is.na(database$germlinehit)+is.na(database$somatic1)+is.na(database$somatic2))
 database$num_APC = as.numeric(database$num_APC)
 
-database=database[database$coverage>=10,]
+database=database[database$coverage>10,]
 database$germlinehit= 'APC'
 
-database_exclude_bystander = database[(database$num_APC>=2 | database$type =='normal' ),]
+database_exclude_bystander = database[(database$trapped_in_polyp != '' | database$num_APC>=2 | database$type =='normal' ),]
 database_exclude_bystander$group_id[database_exclude_bystander$group_id=='normal'] = database_exclude_bystander$sample[database_exclude_bystander$group_id=='normal']
 ```
 
@@ -41,21 +52,28 @@ summary(lmm_sbs5)
 ```
 
 ```{r lmm test}
-df_trunk_length=read.csv("../data/phylogenetic_tree/ACF_polyp_trunk_length.csv")
+df_trunk_length=read.csv(ONSET_CSV)
+# This chunk writes back to the file it reads, so re-running it on its own
+# output used to fail: left_join then found SBS5_random_slope_patient already
+# present, suffixed it .x/.y, and the mutate below could not see it. Drop the
+# derived columns first so the step is idempotent and does not depend on
+# trunk_length.Rmd having just rewritten the file.
+df_trunk_length <- df_trunk_length[, setdiff(names(df_trunk_length),
+  c("SBS5_random_slope_patient", "SBS5_full_slope", "age_onset_upperlim"))]
 fixed_slope <- fixef(lmm_sbs5)["age"]
 ranef_patient <- ranef(lmm_sbs5) %>%
   tibble::rownames_to_column("patient") %>%
   rename(SBS5_random_slope_patient = age)
 
 
-# df_trunk_length <- df_trunk_length %>%
-#   left_join(ranef_patient, by = "patient")
-# df_trunk_length <- df_trunk_length %>%
-#   mutate(SBS5_full_slope = fixed_slope + SBS5_random_slope_patient,
-#          age_onset_upperlim = SBS5_trunk / full_slope) %>%
-#   mutate(age_onset_upperlim = if_else(age_onset_upperlim > age, age, age_onset_upperlim))
+df_trunk_length <- df_trunk_length %>%
+  left_join(ranef_patient, by = "patient")
+df_trunk_length <- df_trunk_length %>%
+  mutate(SBS5_full_slope = fixed_slope + SBS5_random_slope_patient,
+         age_onset_upperlim = SBS5_trunk / SBS5_full_slope) %>%
+  mutate(age_onset_upperlim = if_else(age_onset_upperlim > age, age, age_onset_upperlim))
 
-# write.csv(df_trunk_length,"../data/ACF_polyp_trunk_length.csv", quote = F, row.names = F)
+write.csv(df_trunk_length, ONSET_CSV, quote = F, row.names = F)
 ```
 
 ```{r more than one trunk muts}
@@ -63,7 +81,7 @@ pvalues_lst=c()
 df_trunk_length$trunk_driver_1 = T
 df_trunk_length$trunk_driver_1[df_trunk_length$trunk_somatic_driver>1] = F
 
-lmm <- lme(SBS_total_branch ~ trunk_driver_1, random = ~1|patient/group, data = df_trunk_length, method = "ML")
+lmm <- lme(SBS_total_branch ~ trunk_driver_1, random = ~1|patient/lineage, data = df_trunk_length, method = "ML")
 summary(lmm) #SBS1
 
 
@@ -80,7 +98,7 @@ summary(lmm)
 pvalues_lst=c(pvalues_lst,summary(lmm)$tTable[ , "p-value"])
 ```
 ```{r polyps vs ACF branch}
-lmm <- lme(SBS_total_branch ~ type, random = ~1|patient/group, data = df_trunk_length, method = "ML")
+lmm <- lme(SBS_total_branch ~ type, random = ~1|patient/lineage, data = df_trunk_length, method = "ML")
 summary(lmm)
 pvalues_lst=c(pvalues_lst,summary(lmm)$tTable[ , "p-value"])
 ```
