@@ -8,8 +8,8 @@ Please contact Yichen (yw2@sanger.ac.uk) if you have any questions and enquires.
 
 | Data | Location |
 |---|---|
-| Whole-genome sequencing CRAM files (GRCh38 ) | EGA, EGAD00001015471 |
-| Whole-genome sequencing BAM files (GRCh38), per sample | EGA, EGAD00001015477 |
+| Whole-genome sequencing dataset | EGA, EGAD00001015471 |
+| Whole-genome sequencing aligned BAM files (GRCh38), per sample | EGA, EGAD00001015477 |
 | Whole-exome sequencing dataset | EGA, EGAD00001016591 |
 | Targeted sequencing dataset| EGA, EGAD00001016590 |
 | Somatic mutation VCFs | Zenodo, [10.5281/zenodo.23404884](https://doi.org/10.5281/zenodo.23404884) |
