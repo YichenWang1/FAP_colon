@@ -50,7 +50,7 @@ for (n in 1:nrow(cosine_matrix)) {
   }
 }
 
-write.table(cosine_matrix, file.path(HDP_DIR, "Cosine_similarities_pcawag.txt"), sep="\t", quote=F)
+write.table(cosine_matrix, file.path(HDP_DIR, "Cosine_similarities_cosmic.txt"), sep="\t", quote=F)
 
 # Plot output
 color.palette = colorRampPalette(c("white", "orange", "purple"))
