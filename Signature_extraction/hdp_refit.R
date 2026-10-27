@@ -58,7 +58,7 @@ for (n in 1:nrow(cosine_matrix)) {
   }
 }
 
-write.table(cosine_matrix, file.path(HDP_DIR, "Cosine_similarities_pcawag.txt"), sep="\t", quote=F)
+write.table(cosine_matrix, file.path(HDP_DIR, "Cosine_similarities_cosmic.txt"), sep="\t", quote=F)
 
 # Plot output
 color.palette = colorRampPalette(c("white", "orange", "purple"))
@@ -115,9 +115,9 @@ dev.off()
 ref[,'SBS112']=hdp_sigs$Signature8
 
 # --------------First iteration; decomposed hdp sigs into all suspected signatures---------
-sigs_to_decompose=rowSums(cosine_matrix>0.9)
+sigs_to_decompose=rowSums(cosine_matrix>=0.9)
 for(n in 1:nrow(cosine_matrix)){
-  print(paste0(rownames(cosine_matrix)[n],": ",paste(colnames(cosine_matrix)[cosine_matrix[n,]>0.9],collapse=",")))
+  print(paste0(rownames(cosine_matrix)[n],": ",paste(colnames(cosine_matrix)[cosine_matrix[n,]>=0.9],collapse=",")))
 }
 # Select which signatures to decompose into reference signatures
 sigs_to_deconv=names(sigs_to_decompose)[sigs_to_decompose!=1]

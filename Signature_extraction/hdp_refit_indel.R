@@ -99,9 +99,9 @@ for (n in 1:nrow(cosine_matrix)) {
   }
 }
 
-sigs_to_decompose=rowSums(cosine_matrix>0.9)
+sigs_to_decompose=rowSums(cosine_matrix>=0.9)
 for(n in 1:nrow(cosine_matrix)){
-  print(paste0(rownames(cosine_matrix)[n],": ",paste(colnames(cosine_matrix)[cosine_matrix[n,]>0.9],collapse=",")))
+  print(paste0(rownames(cosine_matrix)[n],": ",paste(colnames(cosine_matrix)[cosine_matrix[n,]>=0.9],collapse=",")))
 }
 
 signatures=t(ref[,gdsigs])
