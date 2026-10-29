@@ -19,6 +19,9 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(cowplot)
 })
+
+NO_BORDER <- theme(plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_get() + NO_BORDER)
 ```
 
 
@@ -196,7 +199,7 @@ effect_plot <- function(effects, ylab, est_col, lo_col, hi_col) {
     # Two rows: at 89 mm a single row of four keys plus the title overruns the
     # panel and is clipped at both ends.
     guides(colour = guide_legend(nrow = 2, byrow = TRUE)) +
-    theme_bw() +
+    theme_bw() + NO_BORDER +
     theme(panel.grid = element_blank(), panel.border = element_blank(),
           axis.line = element_line(colour = "black", linewidth = LINE_W)) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "black",

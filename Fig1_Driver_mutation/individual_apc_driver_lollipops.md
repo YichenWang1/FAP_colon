@@ -55,9 +55,7 @@ lower_trackviewer_lollipop_labels <- function(y_offset = LABEL_GAP) {
   if (length(hit) != 1) {
     stop("Could not patch trackViewer label y-position; internal plotLollipops layout changed.")
   }
-  # Strip any offset a previous call left behind: the patch is otherwise a
-  # silent no-op in a session that has already been patched, so edits to
-  # LABEL_GAP would appear to do nothing.
+  # Strip any offset a previous call left behind
   plot_lollipops_txt[hit + 1] <- sub(
     "feature\\.height( - [0-9.]+)?,",
     "feature.height,",

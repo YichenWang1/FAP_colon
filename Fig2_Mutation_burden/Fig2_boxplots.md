@@ -17,6 +17,9 @@ suppressPackageStartupMessages({
   library(ggpubr)
   library(ggtext)
 })
+
+NO_BORDER <- theme(plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_get() + NO_BORDER)
 ```
 
 
@@ -61,9 +64,6 @@ type_labels_html <- c(
 
 patients <- c("PD42778", "PD44721", "PD40734", "PD44720", "PD45542")
 
-# Crypt-type palette shared with Fig 3 and the supp age dotplots: blue/purple
-# for APC-wt-at-second-hit crypts, then one warm ladder that darkens along
-# lesion progression. Colour duplicates the x axis, so no legend is drawn.
 type_cols <- c(
   "Normal crypts"              = "#70A3C4",
   "Bystander crypts"           = "#835198",
@@ -91,11 +91,7 @@ FS_STRIP      <- 7      # patient facet headers
 FS_LEGEND     <- 6
 FS_LEGEND_TIT <- 7
 PT_SIZE       <- 0.35   # jitter point size, scaled down with the figure
-# ggplot resolves jitter when a plot is DRAWN, not when it is built, so an
-# unseeded geom_jitter scatters the points afresh on every print(): the PDFs
-# were not reproducible run to run, and the Telomere/RT panels reused in the
-# supplementary figure did not match their own standalone PDFs. Seeding the
-# position makes every draw of a layer identical, wherever it is drawn.
+# Seeding the position makes every draw of a layer identical, wherever it is drawn.
 JITTER_SEED   <- 42
 STAR_SIZE     <- 6 / .pt  # bracket labels at 6 pt (geom_text size is in mm)
 ```
@@ -323,7 +319,7 @@ make_plot <- function(data, yvar, ylab, log_y = FALSE, sqrt_y = FALSE) {
     geom_point(aes(color = plot_type), alpha = 1, size = PT_SIZE,
                position = position_jitter(width = 0.2, height = 0, seed = JITTER_SEED)) +
     facet_wrap(~patient, ncol = length(patients), scales = "free") +
-    theme_minimal() + theme_bw() +
+    theme_minimal() + theme_bw() + NO_BORDER +
     theme(text = element_text(size = FS_AXIS_TEXT),
           axis.text.x  = ggtext::element_markdown(angle = 45, hjust = 1, size = FS_AXIS_TEXT),
           axis.text.y  = element_text(size = FS_AXIS_TEXT),

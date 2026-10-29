@@ -19,6 +19,9 @@ suppressPackageStartupMessages({
   library(tidyverse)
   library(ggtext)
 })
+
+NO_BORDER <- theme(plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_get() + NO_BORDER)
 ```
 
 
@@ -126,8 +129,7 @@ crypt_type_cols <- c("Normal and bystander, APC mut/wt" = "grey",
                      "BC, APC mut/mut"                  = "#f09080",
                      "ACA, APC mut/mut"                 = "#dd7601",
                      "Microadenoma, APC mut/mut"        = "#bb0414")
-# Order the categories as the colour key lists them; any unexpected category
-# goes last rather than becoming NA.
+# Order the categories as the colour key lists them
 bar_data$type <- factor(
   bar_data$type,
   levels = c(names(crypt_type_cols), setdiff(unique(bar_data$type), names(crypt_type_cols))))
@@ -162,8 +164,7 @@ order_samples <- function(crypts, burden_col) {
   factor(crypts$sample, levels = crypts$sample[ordering])
 }
 
-# Signature colours. SBS2/SBS13 keep their slots so colours stay stable if
-# they are ever extracted.
+# Signature colours.
 sbs_sig_cols <- c(set3_palette(9)[1:8], "magenta", "firebrick")
 names(sbs_sig_cols) <- c("SBS1","SBS5","SBS18","SBS2","SBS13",
                          "SBS88","SBS89","SBS112","SBS17b","SBS93")
@@ -235,7 +236,7 @@ crypt_type_legend <- local({
 })
 
 bar_theme <- function() {
-  theme_bw() +
+  theme_bw() + NO_BORDER +
     theme(text = element_text(size = FS_BAR),
           axis.title = element_text(size = FS_AXIS_TITLE),
           axis.text.y = element_text(size = FS_AXIS_TEXT),
@@ -261,7 +262,7 @@ make_proportion_plot <- function(props, cohort, sig_cols, xlab, fill_title, lege
 }
 
 # For each patient x tagged crypt type, one row placed over the middle bar of
-# that run, so the three neighbouring BC bars share a single label.
+# that run
 tag_positions <- function(bars, all_props, burden_col) {
   bars <- bars[bars$type %in% names(crypt_type_tags), ]
   if (!nrow(bars)) return(cbind(bars, tag = character(0)))
@@ -371,7 +372,7 @@ make_dot_plot <- function(crypts, yvar, ylab) {
     scale_color_manual(name = "Group", values = dot_category_cols,
                        labels = dot_category_labels, drop = TRUE) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
-    theme_bw() +
+    theme_bw() + NO_BORDER +
     theme(panel.grid = element_blank(), panel.border = element_blank(),
           axis.line = element_line(linewidth = 0.5, colour = "black")) +
     labs(y = ylab, x = "Age (yrs)") +

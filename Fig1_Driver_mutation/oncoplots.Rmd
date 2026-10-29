@@ -19,12 +19,15 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(RColorBrewer)
 })
+
+NO_BORDER <- theme(plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_get() + NO_BORDER)
 ```
 
 ```{r constants}
 ROOT     <- "/lustre/scratch125/casm/teams/team267/users/yw2/colon/github_repo"
 OUT_DIR  <- file.path(ROOT, "Fig1_Driver_mutation")
-FAP_DB   <- file.path(ROOT, "data/fap_database_withexposure.csv")
+FAP_CSV   <- file.path(ROOT, "data/fap_database_withexposure.csv")
 CNV_CSV  <- file.path(ROOT, "data/CNV_SV_RT/CNV.csv")
 
 CATEGORIES <- c("bc", "aca", "microadenoma", "diminutive", "large", "trapped")
@@ -50,41 +53,38 @@ CLASS_MAP <- c(Nonsense = "Nonsense_Mutation", Missense = "Missense_Mutation",
 ## Category membership and driver calls
 
 ```{r database}
-## ---------------- category membership (full universe, from fap_database) ----------------
-db <- read.csv(FAP_DB, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE, na.strings = c("", "NA"))
-db$is_trapped <- !is.na(db$trapped_in_polyp)
-db$is_cnv <- db$somatic1 %in% c("Chr5LOH", "Chr5CNNLOH") | db$somatic2 %in% c("Chr5LOH", "Chr5CNNLOH")
+## ---------------- category membership ----------------
+database <- read.csv(FAP_CSV, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE, na.strings = c("", "NA"))
+database$is_trapped <- !is.na(database$trapped_in_polyp)
+database$is_cnv <- database$somatic1 %in% c("Chr5LOH", "Chr5CNNLOH") | database$somatic2 %in% c("Chr5LOH", "Chr5CNNLOH")
 
 category_rows <- list(
-  bc      = db[db$type == "bc", ],
-  aca     = db[db$type == "aca", ],
-  microadenoma = db[db$type %in% c("monocryptal_adenoma", "oligocryptal_adenoma"), ],
-  diminutive = db[db$type == "diminutive_polyp", ],
-  large   = db[db$type == "large_polyp", ],
-  trapped = db[db$type == "trapped_crypt", ]
+  bc      = database[database$type == "bc", ],
+  aca     = database[database$type == "aca", ],
+  microadenoma = database[database$type %in% c("monocryptal_adenoma", "oligocryptal_adenoma"), ],
+  diminutive = database[database$type == "diminutive_polyp", ],
+  large   = database[database$type == "large_polyp", ],
+  trapped = database[database$type == "trapped_crypt", ]
 )
 ```
 
 ```{r drivers}
 somatic_drivers <- read.csv(file.path(ROOT, "data/driver_mutation/somatic_drivers.csv"), stringsAsFactors = FALSE)
 somatic_drivers <- somatic_drivers[somatic_drivers$is.supressor == "Y" | somatic_drivers$is.hotspot == "Y", ]
-trapped_by_group <- tapply(db$is_trapped, db$group_id, any) 
+trapped_by_group <- tapply(database$is_trapped, database$group_id, any) 
 somatic_drivers$is_trapped <- trapped_by_group[somatic_drivers$Group_ID]
 
 ## Second hits: a non-APC driver mutation that falls inside a copy number
 ## LOSS or LOH segment (minor == 0) carried by at least one of the same crypts
-## has lost both alleles, so it is drawn as Multi_Hit rather than as a single
-## point mutation. Restricted to minor == 0 deliberately: a gain over a hotspot
-## (KRAS G12D on a 3:1 gain in PD44721I_PLP_02_2) is a different event from
-## biallelic inactivation and keeps its own classification.
-## APC is excluded here because its chr5 LOH is already added below via is_cnv.
-## NOTE somatic_drivers$Sample is a ';'-joined list of crypts, not one crypt.
+## gets an LOH or Loss event (the segment's CNV.status in the shared crypts)
+## for that gene, as chr5 LOH does for APC (build_events).
 cnv_all <- read.csv(CNV_CSV, stringsAsFactors = FALSE)
 
-second_hit_keys <- local({
+second_hits <- local({
   sd2 <- somatic_drivers[somatic_drivers$Gene != "APC", ]
   sd2$chr <- ifelse(grepl("^chr", sd2$Chr), sd2$Chr, paste0("chr", sd2$Chr))
-  keys <- character(0)
+  hits <- data.frame(Gene = character(0), Group_ID = character(0), Variant_Classification = character(0),
+                     stringsAsFactors = FALSE)
   for (i in seq_len(nrow(sd2))) {
     r <- sd2[i, ]
     o <- cnv_all[cnv_all$group_id == r$Group_ID & cnv_all$chr == r$chr &
@@ -98,9 +98,11 @@ second_hit_keys <- local({
                 r$Gene, r$Mutation, r$Group_ID,
                 paste(unique(o$CNV.status), collapse = ","), length(shared),
                 length(trimws(strsplit(r$Sample, ";")[[1]]))))
-    keys <- c(keys, paste(r$Gene, r$Group_ID, sep = "\r"))
+    hits <- rbind(hits, data.frame(Gene = r$Gene, Group_ID = r$Group_ID,
+                                   Variant_Classification = unique(o$CNV.status[o$sample %in% shared]),
+                                   stringsAsFactors = FALSE))
   }
-  unique(keys)
+  unique(hits)
 })
 
 driver_details <- list(
@@ -119,21 +121,19 @@ build_events <- function(cat) {
   muts <- driver_details[[cat]]
   ev <- data.frame(Gene = muts$Gene, Group_ID = muts$Group_ID,
                     Variant_Classification = unname(CLASS_MAP[muts$Mutation_Type]), stringsAsFactors = FALSE)
+  # copy number events: chr5 LOH for APC, and overlapping LOH/Loss for other
+  # drivers mutated in this category (second_hits above)
   cnv_groups <- unique(category_rows[[cat]]$group_id[category_rows[[cat]]$is_cnv])
-  if (length(cnv_groups) > 0) {
-    ev <- rbind(ev, data.frame(Gene = "APC", Group_ID = cnv_groups, Variant_Classification = "LOH", stringsAsFactors = FALSE))
-  }
-  # collapse >1 distinct classification for the same (Gene, Group_ID) to Multi_Hit
-  ev <- aggregate(Variant_Classification ~ Gene + Group_ID, data = ev,
-                   FUN = function(x) if (length(unique(x)) > 1) "Multi_Hit" else x[1])
-  # biallelic by mutation + overlapping LOH/loss (see second_hit_keys above)
-  ev$Variant_Classification[paste(ev$Gene, ev$Group_ID, sep = "\r") %in%
-                              second_hit_keys] <- "Multi_Hit"
-  ev
+  ev <- rbind(ev,
+              data.frame(Gene = rep("APC", length(cnv_groups)), Group_ID = cnv_groups,
+                         Variant_Classification = rep("LOH", length(cnv_groups)), stringsAsFactors = FALSE),
+              second_hits[paste(second_hits$Gene, second_hits$Group_ID) %in% paste(ev$Gene, ev$Group_ID), ])
+  # collapse >1 distinct classification to Multi_Hit
+  aggregate(Variant_Classification ~ Gene + Group_ID, data = ev,
+            FUN = function(x) if (length(unique(x)) > 1) "Multi_Hit" else x[1])
 }
 
-## memoSort: order genes by frequency (desc), then samples by a binary
-## "staircase" score so the most-mutated gene's samples cluster leftmost.
+## order genes by frequency (desc) so the most-mutated gene's samples cluster leftmost.
 memo_sort_samples <- function(bin_mat) {
   gene_order <- order(rowSums(bin_mat), decreasing = TRUE)
   m <- bin_mat[gene_order, , drop = FALSE]
@@ -161,7 +161,7 @@ bin_mat_all <- matrix(0, nrow = length(genes_all), ncol = n_total_all,
 for (i in seq_len(nrow(ev_all))) bin_mat_all[ev_all$Gene[i], ev_all$Group_ID[i]] <- 1
 
 # order: block by category (aca, microadenoma, diminutive, large, so the
-# adenoma subtypes stay contiguous and in that order), memoSort mutated
+# adenoma subtypes stay contiguous and in that order), mutated
 # samples within each block, WT samples appended per block.
 sample_order_all <- unlist(lapply(COMBINED_ORDER, function(cat) {
   grp <- all_groups_by_cat[[cat]]
@@ -172,12 +172,9 @@ sample_order_all <- unlist(lapply(COMBINED_ORDER, function(cat) {
     c(ord$sample_order, sort(wt))
   } else sort(wt)
 }))
-# Genes are ordered by the NUMBER OF LESIONS carrying a mutation, which is the
+# Genes are ordered by the number of lesions carrying a mutation, which is the
 # same quantity as the per-panel percentages printed beside each row. Ties are
-# broken by how many of those lesions are Multi_Hit, so a biallelic gene leads
-# its count block without jumping over genes found in more lesions -- weighting
-# Multi_Hit as two events would have put SOX9 (2 lesions) above KRAS and TP53
-# (3 each), contradicting the counts and the labels.
+# broken by how many of those lesions are Multi_Hit
 n_lesions_all <- rowSums(bin_mat_all)
 n_multihit_all <- tapply(ev_all$Variant_Classification == "Multi_Hit", ev_all$Gene, sum)
 n_multihit_all <- as.integer(n_multihit_all[names(n_lesions_all)])
@@ -239,7 +236,7 @@ for (i in seq_along(COMBINED_ORDER)) {
     labs(title = panel_labels[[cat_i]]) +
     theme_minimal(base_family = FONT_FAMILY) +
     theme(axis.text.x = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(),
-          axis.text.y = if (i == 1) element_text(size = 5.5) else element_blank(),
+          axis.text.y = if (i == 1) element_text(size = 5.5, colour = "black", face = "italic") else element_blank(),
           panel.grid = element_blank(), plot.margin = margin(1, 1, 1, 1),
           legend.position = "none",
           plot.title = element_text(face = "bold", size = 7, hjust = 0.5))
@@ -248,9 +245,6 @@ for (i in seq_along(COMBINED_ORDER)) {
     geom_col(fill = "grey40", width = 0.7, na.rm = TRUE) +
     geom_text(aes(label = paste0(pct, "%")), hjust = -0.15, size = 5.5 / .pt,
               family = FONT_FAMILY, na.rm = TRUE) +
-    # Leave room for the widest label ("100%") after the longest bar, and do
-    # not clip text at the panel edge: the "100%" labels in the Microadenomas
-    # and Large polyps panels were being cut off.
     scale_x_continuous(limits = c(0, pct_max * 2.1), expand = c(0, 0)) +
     scale_y_discrete(drop = FALSE) +
     coord_cartesian(clip = "off") +
@@ -273,8 +267,6 @@ legend_ref <- ggplot(plot_df, aes(x = Group_ID, y = Gene, fill = Variant_Classif
   guides(fill = guide_legend(nrow = 1)) +
   theme(text = element_text(family = FONT_FAMILY),
         legend.position = "bottom",
-        # keep each label tight to its own swatch, and put the larger gap
-        # between items, so labels group with the correct colour block
         legend.text = element_text(size = 5.5, margin = margin(l = 1, unit = "pt")),
         legend.key.spacing.x = unit(3, "mm"),
         legend.key.size = unit(2.5, "mm"))

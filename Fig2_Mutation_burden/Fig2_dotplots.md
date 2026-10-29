@@ -17,6 +17,9 @@ suppressPackageStartupMessages({
   library(ggpubr)
   library(ggtext)
 })
+
+NO_BORDER <- theme(plot.background = element_rect(fill = "white", colour = NA))
+theme_set(theme_get() + NO_BORDER)
 ```
 
 
@@ -65,10 +68,7 @@ FS_AXIS_TEXT  <- 6
 FS_LEGEND     <- 6
 FS_LEGEND_TIT <- 7
 PT_SIZE       <- 0.45   # jitter point size, scaled down with the figure
-# ggplot resolves jitter when a plot is DRAWN, not when it is built, so an
-# unseeded geom_jitter scatters the points afresh on every print() and the
-# figure cannot be reproduced run to run. Seeding the position fixes every
-# draw of the layer, wherever it is drawn.
+# Seeding the position fixes every draw of the layer, wherever it is drawn.
 JITTER_SEED   <- 42
 ```
 
@@ -101,8 +101,6 @@ full_dataset$num_APC <- 3 - (is.na(full_dataset$somatic1) +
 
 
 ``` r
-# Disjoint category rules, assigned in one pass so no row can be silently
-# overwritten by a later rule.
 df <- full_dataset
 n_apc <- df$num_APC
 ty    <- df$type
@@ -168,7 +166,7 @@ make_dot_plot <- function(yvar, ylab) {
     # Burdens are non-negative: anchor the axis at 0 with no lower expansion so
     # 0 sits exactly on the axis line, keeping the usual headroom at the top.
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
-    theme_bw() +
+    theme_bw() + NO_BORDER +
     theme(panel.grid = element_blank(), panel.border = element_blank(),
           axis.line = element_line(linewidth = 0.5, colour = "black")) +
     labs(y = ylab, x = "Age (yrs)") +
